@@ -1,0 +1,29 @@
+from __future__ import annotations
+
+import os
+import sys
+
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import QApplication
+
+from .ui.font import configure_local_font
+from .ui.main_window import create_window
+
+
+def main() -> int:
+    QApplication.setHighDpiScaleFactorRoundingPolicy(
+        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+    )
+    app = QApplication(sys.argv)
+    app.setApplicationName("HelpPack")
+    app.setOrganizationName("HelpPack")
+    configure_local_font(app)
+    window = create_window()  # noqa: F841 - keep the top-level window alive through app.exec()
+    smoke_exit = os.environ.get("HELPPACK_SMOKE_EXIT_MS", "")
+    if smoke_exit.isdigit() and 0 < int(smoke_exit) <= 60_000:
+        QTimer.singleShot(int(smoke_exit), app.quit)
+    return app.exec()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
