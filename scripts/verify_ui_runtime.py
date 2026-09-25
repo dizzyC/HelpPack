@@ -24,6 +24,7 @@ from helppack.diagnostics.models import (
     DiagnosticStatus,
     Evidence,
     SafetyLevel,
+    ScanSummary,
     Severity,
 )
 from helppack.diagnostics.workers import DiagnosticWorker
@@ -113,6 +114,30 @@ def main() -> int:
     diagnostic_image = output / "ui_diagnostic.png"
     window.grab().save(str(diagnostic_image), "PNG")
 
+    long_evidence = "很长的诊断证据，应该能够完整换行、滚动、选择和复制。" * 80
+    diagnostic_result = DiagnosticResult(
+        check_id="ui.long_text",
+        category="测试",
+        display_name="长文字显示测试",
+        status=DiagnosticStatus.NOTICE,
+        severity=Severity.LOW,
+        evidence=[Evidence("完整证据", long_evidence)],
+        explanation="这是用于发布前界面验证的虚构解释。",
+        confidence="中",
+        recommendations=["查看下方完整内容区域。"],
+        safety_level=SafetyLevel.L0,
+    )
+    window.diagnostic_page.summary = ScanSummary("测试", "开始", "结束", False, [diagnostic_result])
+    window.diagnostic_page._populate_results()
+    window.diagnostic_page.pages.setCurrentIndex(2)
+    result_top = window.diagnostic_page.result_tree.topLevelItem(0)
+    window.diagnostic_page.result_tree.setCurrentItem(result_top.child(1))
+    app.processEvents()
+    if long_evidence not in window.diagnostic_page.result_detail.toPlainText():
+        raise AssertionError("诊断长文字未完整进入可滚动详情区域")
+    diagnostic_result_image = output / "ui_diagnostic_result.png"
+    window.grab().save(str(diagnostic_result_image), "PNG")
+
     window._go(1, "1 / 5  描述问题")
     messages = []
     with patch.object(QMessageBox, "information", side_effect=lambda _parent, title, text: messages.append((title, text))):
@@ -150,7 +175,12 @@ def main() -> int:
         "background_event_ticks": ticks,
         "cancelled_scan": True,
         "user_friendly_validation_message": True,
-        "screenshots": [str(home_image.resolve()), str(diagnostic_image.resolve())],
+        "diagnostic_long_text_visible": True,
+        "screenshots": [
+            str(home_image.resolve()),
+            str(diagnostic_image.resolve()),
+            str(diagnostic_result_image.resolve()),
+        ],
     }
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0

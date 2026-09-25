@@ -7,10 +7,12 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
+    QPlainTextEdit,
     QProgressBar,
     QPushButton,
     QStackedWidget,
@@ -163,11 +165,24 @@ class DiagnosticPage(QWidget):
         self.result_tree = QTreeWidget()
         self.result_tree.setHeaderLabels(["检查项目 / 为什么这样判断", "状态", "严重程度", "可信度"])
         self.result_tree.setAlternatingRowColors(True)
-        self.result_tree.setMinimumHeight(260)
+        self.result_tree.setWordWrap(True)
+        self.result_tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        for column in range(1, 4):
+            self.result_tree.header().setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+        self.result_tree.currentItemChanged.connect(self._show_result_detail)
+        self.result_tree.setMinimumHeight(190)
         body.addWidget(self.result_tree, 2)
+        detail_heading = QLabel("所选项目完整内容（可滚动、选择和复制）")
+        body.addWidget(detail_heading)
+        self.result_detail = QPlainTextEdit()
+        self.result_detail.setReadOnly(True)
+        self.result_detail.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
+        self.result_detail.setMinimumHeight(110)
+        self.result_detail.setPlaceholderText("选择上方检查项目或证据后，在这里查看完整文字。")
+        body.addWidget(self.result_detail, 1)
         body.addWidget(QLabel("可选的单项修复（没有建议时不会执行任何修改）"))
         self.repair_list = QListWidget()
-        self.repair_list.setMaximumHeight(115)
+        self.repair_list.setMaximumHeight(90)
         body.addWidget(self.repair_list)
         repair_row = QHBoxLayout()
         self.repair_button = QPushButton("查看并确认所选修复")
@@ -235,6 +250,7 @@ class DiagnosticPage(QWidget):
 
     def _populate_results(self) -> None:
         self.result_tree.clear()
+        self.result_detail.clear()
         self.repair_list.clear()
         if self.summary is None:
             return
@@ -243,11 +259,30 @@ class DiagnosticPage(QWidget):
             counts[item.status.value] = counts.get(item.status.value, 0) + 1
             top = QTreeWidgetItem([item.display_name, item.status.value, item.severity.value, item.confidence])
             self.result_tree.addTopLevelItem(top)
-            QTreeWidgetItem(top, [f"解释：{item.explanation}", "", "", ""])
+            detail_lines = [
+                item.display_name,
+                f"状态：{item.status.value}",
+                f"严重程度：{item.severity.value}",
+                f"可信度：{item.confidence}",
+                "",
+                f"解释：{item.explanation}",
+                "",
+                "检测证据：",
+            ]
+            explanation = f"解释：{item.explanation}"
+            self._add_detail_child(top, explanation)
             for evidence in item.evidence:
-                QTreeWidgetItem(top, [f"证据 · {evidence.label}：{evidence.value}", "", "", ""])
+                evidence_text = f"证据 · {evidence.label}：{evidence.value}"
+                detail_lines.append(f"- {evidence.label}：{evidence.value}")
+                self._add_detail_child(top, evidence_text)
+            detail_lines.extend(["", "建议操作："])
             for recommendation in item.recommendations:
-                QTreeWidgetItem(top, [f"建议：{recommendation}", "", "", ""])
+                recommendation_text = f"建议：{recommendation}"
+                detail_lines.append(f"- {recommendation}")
+                self._add_detail_child(top, recommendation_text)
+            full_detail = "\n".join(detail_lines)
+            top.setData(0, Qt.ItemDataRole.UserRole, full_detail)
+            top.setToolTip(0, full_detail)
             for repair in item.repair_suggestions:
                 row = QListWidgetItem(f"[{repair.safety_level.value}] {repair.display_name}")
                 row.setData(Qt.ItemDataRole.UserRole, repair)
@@ -260,8 +295,23 @@ class DiagnosticPage(QWidget):
             self.last_operation_message = ""
         self.result_banner.setText(message)
         self.repair_button.setEnabled(self.repair_list.count() > 0)
-        self.result_tree.resizeColumnToContents(1)
-        self.result_tree.resizeColumnToContents(2)
+        if self.result_tree.topLevelItemCount():
+            self.result_tree.setCurrentItem(self.result_tree.topLevelItem(0))
+
+    def _add_detail_child(self, parent: QTreeWidgetItem, full_text: str) -> None:
+        preview = " ".join(full_text.splitlines())
+        if len(preview) > 180:
+            preview = preview[:177] + "…"
+        child = QTreeWidgetItem(parent, [preview, "", "", ""])
+        child.setData(0, Qt.ItemDataRole.UserRole, full_text)
+        child.setToolTip(0, full_text)
+
+    def _show_result_detail(self, current: QTreeWidgetItem | None, _previous: QTreeWidgetItem | None) -> None:
+        if current is None:
+            self.result_detail.clear()
+            return
+        full_text = current.data(0, Qt.ItemDataRole.UserRole) or current.text(0)
+        self.result_detail.setPlainText(str(full_text))
 
     def _confirm_selected_repair(self) -> None:
         row = self.repair_list.currentItem()

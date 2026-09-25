@@ -3,9 +3,17 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QScrollArea
+from PySide6.QtWidgets import QApplication, QPlainTextEdit, QScrollArea
 
 from helppack.attachments import add_attachments
+from helppack.diagnostics.models import (
+    DiagnosticResult,
+    DiagnosticStatus,
+    Evidence,
+    SafetyLevel,
+    ScanSummary,
+    Severity,
+)
 from helppack.models import ProblemDetails, SystemSnapshot
 from helppack.ui.main_window import MainWindow
 
@@ -78,4 +86,34 @@ def test_visible_chinese_strings_have_no_replacement_character() -> None:
     texts += [button.text() for button in window.findChildren(__import__("PySide6.QtWidgets").QtWidgets.QPushButton)]
     assert texts
     assert all("�" not in text for text in texts)
+    window.close()
+
+
+def test_diagnostic_long_text_is_available_in_scrollable_detail_view() -> None:
+    application = app()
+    window = MainWindow()
+    long_text = "很长的诊断证据，应该能够完整查看和复制。" * 80
+    result = DiagnosticResult(
+        check_id="ui.long_text",
+        category="测试",
+        display_name="长文字显示测试",
+        status=DiagnosticStatus.NOTICE,
+        severity=Severity.LOW,
+        evidence=[Evidence("完整证据", long_text)],
+        explanation="这是用于界面显示的虚构解释。",
+        confidence="中",
+        recommendations=["查看完整证据，不要只依赖列表预览。"],
+        safety_level=SafetyLevel.L0,
+    )
+    window.diagnostic_page.summary = ScanSummary("测试", "开始", "结束", False, [result])
+    window.diagnostic_page._populate_results()
+    top = window.diagnostic_page.result_tree.topLevelItem(0)
+    evidence_item = top.child(1)
+    window.diagnostic_page.result_tree.setCurrentItem(evidence_item)
+    application.processEvents()
+
+    assert window.diagnostic_page.result_detail.isReadOnly()
+    assert window.diagnostic_page.result_detail.lineWrapMode() == QPlainTextEdit.LineWrapMode.WidgetWidth
+    assert long_text in window.diagnostic_page.result_detail.toPlainText()
+    assert len(evidence_item.text(0)) < len(long_text)
     window.close()
