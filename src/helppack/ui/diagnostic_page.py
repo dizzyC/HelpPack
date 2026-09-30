@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QListWidget,
     QListWidgetItem,
@@ -23,15 +24,21 @@ from PySide6.QtWidgets import (
 )
 
 from ..diagnostics.history import DiagnosticHistoryStore
-from ..diagnostics.models import RepairSuggestion, SafetyLevel, ScanSummary
+from ..diagnostics.models import (
+    RepairSuggestion,
+    SafetyLevel,
+    ScanSummary,
+)
 from ..diagnostics.repairs import RepairCoordinator, RepairError
 from ..diagnostics.reporting import generate_diagnostic_markdown
-from ..diagnostics.workers import DiagnosticWorker
+from ..diagnostics.workers import DiagnosticWorker, RepairWorker
 
 DIAGNOSTIC_CATEGORIES = [
     "系统卡顿",
     "软件或浏览器异常",
     "网络或Wi-Fi异常",
+    "Microsoft Store 问题",
+    "驱动安装与更新",
     "声音问题",
     "蓝牙问题",
     "打印机问题",
@@ -52,10 +59,19 @@ class DiagnosticPage(QWidget):
         self.summary: ScanSummary | None = None
         self.thread: QThread | None = None
         self.worker: DiagnosticWorker | None = None
+        self.repair_thread: QThread | None = None
+        self.repair_worker: RepairWorker | None = None
         self.coordinator = RepairCoordinator()
         self.history = DiagnosticHistoryStore()
         self.last_operation_message = ""
-        self.rollback_ids: list[str] = self.coordinator.backups.list_ids()
+        self.rollback_ids: list[str] = []
+        for backup_id in reversed(self.coordinator.backups.list_ids()):
+            try:
+                if self.coordinator.backups.load(backup_id).get("action_id") in {"disable_hkcu_startup", "reset_user_proxy"}:
+                    self.rollback_ids.append(backup_id)
+            except (OSError, ValueError):
+                continue
+        self.operation_summaries: list[str] = []
 
         layout = QVBoxLayout(self)
         self.pages = QStackedWidget()
@@ -66,7 +82,7 @@ class DiagnosticPage(QWidget):
 
     @property
     def is_running(self) -> bool:
-        return self.thread is not None and self.thread.isRunning()
+        return (self.thread is not None and self.thread.isRunning()) or (self.repair_thread is not None and self.repair_thread.isRunning())
 
     def show_start(self) -> None:
         self.pages.setCurrentIndex(0)
@@ -80,6 +96,9 @@ class DiagnosticPage(QWidget):
             self.history_label.setText("尚无本机诊断历史。")
 
     def request_cancel(self) -> None:
+        if self.repair_thread is not None and self.repair_thread.isRunning():
+            self.scan_status.setText("修复正在进行，当前操作不能安全中断；完成后会显示结果。")
+            return
         if self.worker is not None:
             self.worker.cancel_event.set()
             self.scan_status.setText("正在取消；当前检查结束后不会继续后续项目…")
@@ -99,10 +118,13 @@ class DiagnosticPage(QWidget):
         notice_layout = QVBoxLayout(notice)
         notice_layout.addWidget(QLabel("安全边界"))
         safety = QLabel(
-            "检查结论会展示证据和可信度。只有你选择一个具体修复、查看影响/权限/回滚方式并再次确认后，应用才可能执行该单项操作。综合检查不会运行 SFC、DISM、网络重置或深度磁盘检查。"
+            "检查结论会展示证据和可信度。修复必须逐项确认；高风险操作需要第二次确认。管理员操作只在该动作执行期间请求 UAC，应用永不自动重启电脑。"
         )
         safety.setWordWrap(True)
         notice_layout.addWidget(safety)
+        validation = QLabel("开发预览：新增系统修复尚待隔离 Windows 环境验收。驱动更新检查会联系 Windows Update。")
+        validation.setWordWrap(True)
+        notice_layout.addWidget(validation)
         body.addWidget(notice)
         self.history_label = QLabel("尚无本机诊断历史。")
         self.history_label.setObjectName("subtitle")
@@ -131,6 +153,7 @@ class DiagnosticPage(QWidget):
         body = QVBoxLayout(page)
         body.addStretch()
         heading = QLabel("正在执行只读检查")
+        self.scan_heading = heading
         heading.setObjectName("pageTitle")
         heading.setAlignment(Qt.AlignmentFlag.AlignCenter)
         body.addWidget(heading)
@@ -210,6 +233,7 @@ class DiagnosticPage(QWidget):
         if self.is_running:
             return
         self.pages.setCurrentIndex(1)
+        self.scan_heading.setText("正在执行只读检查")
         self.phase_changed.emit("本机诊断 · 只读检查")
         self.scan_progress.setValue(0)
         self.scan_status.setText("准备开始…")
@@ -284,7 +308,13 @@ class DiagnosticPage(QWidget):
             top.setData(0, Qt.ItemDataRole.UserRole, full_detail)
             top.setToolTip(0, full_detail)
             for repair in item.repair_suggestions:
-                row = QListWidgetItem(f"[{repair.safety_level.value}] {repair.display_name}")
+                if repair.safety_level == SafetyLevel.L1 and not repair.requires_admin:
+                    group = "可安全修复"
+                elif repair.safety_level == SafetyLevel.L3:
+                    group = "高风险/需二次确认"
+                else:
+                    group = "需要确认" + ("与管理员权限" if repair.requires_admin else "")
+                row = QListWidgetItem(f"{group} · [{repair.safety_level.value}] {repair.display_name}")
                 row.setData(Qt.ItemDataRole.UserRole, repair)
                 self.repair_list.addItem(row)
         state = "扫描已取消，以下结果不完整。" if self.summary.cancelled else "L0 只读扫描完成，没有修改系统。"
@@ -326,14 +356,20 @@ class DiagnosticPage(QWidget):
         except RepairError as exc:
             QMessageBox.warning(self, "无法准备修复", str(exc))
             return
-        warning = "此操作可能中断部分应用的联网。" if prepared.safety_level == SafetyLevel.L2 else "此操作仅影响明确列出的当前用户启动项。"
+        side_effects = "；".join(prepared.side_effects or []) or "未列出额外副作用"
+        warning = "高风险操作必须再次确认，且可能无法自动恢复。" if prepared.safety_level == SafetyLevel.L3 else "应用只会执行这里列出的这一项操作。"
         detail = (
             f"<b>{html.escape(prepared.display_name)}</b><br><br>"
             f"安全等级：{prepared.safety_level.value}<br>"
             f"目标：{html.escape(str(prepared.target))}<br>"
             f"等价操作：{html.escape(prepared.operation_preview)}<br>"
             f"需要管理员权限：{'是' if prepared.requires_admin else '否'}<br>"
+            f"需要联网：{'是' if prepared.requires_network else '否'}<br>"
+            f"重启要求：{prepared.restart_requirement.value}<br>"
+            f"预计耗时：约 {prepared.estimated_seconds} 秒<br>"
             f"可能影响：{html.escape(prepared.impact)}<br>"
+            f"副作用：{html.escape(side_effects)}<br>"
+            f"回滚能力：{prepared.rollback_capability.value}<br>"
             f"回滚方式：{html.escape(prepared.rollback)}<br><br>"
             f"<b>{html.escape(warning)}</b><br><br>是否只执行这一项操作？"
         )
@@ -347,17 +383,74 @@ class DiagnosticPage(QWidget):
         if answer != QMessageBox.StandardButton.Yes:
             self.coordinator.execute(prepared, user_confirmed=False)
             return
-        try:
-            outcome = self.coordinator.execute(prepared, user_confirmed=True)
-        except (RepairError, PermissionError, OSError) as exc:
-            QMessageBox.warning(self, "修复未执行", f"没有完成修改：{exc}")
+        second_confirmation: str | bool = False
+        if prepared.requires_second_confirmation:
+            if prepared.confirmation_phrase:
+                value, ok = QInputDialog.getText(self, "第二次确认", f"此操作不可可靠回滚。请输入“{prepared.confirmation_phrase}”继续：")
+                if not ok or value != prepared.confirmation_phrase:
+                    self.coordinator.execute(prepared, user_confirmed=False)
+                    return
+                second_confirmation = value
+            else:
+                second = QMessageBox.warning(
+                    self, "第二次确认",
+                    "此操作可能改变网络、驱动或系统组件，并且无法保证自动恢复。HelpPack 不会自动重启电脑。确定继续吗？",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if second != QMessageBox.StandardButton.Yes:
+                    self.coordinator.execute(prepared, user_confirmed=False)
+                    return
+                second_confirmation = True
+        # Consume the local preview confirmation. The worker creates a fresh, short-lived confirmation.
+        self.coordinator.execute(prepared, user_confirmed=False)
+        self._start_repair_worker(suggestion, second_confirmation)
+
+    def _start_repair_worker(self, suggestion: RepairSuggestion, second_confirmation: str | bool) -> None:
+        if self.repair_thread is not None and self.repair_thread.isRunning():
             return
-        if outcome.backup_id:
+        self.pages.setCurrentIndex(1)
+        self.scan_heading.setText("正在执行单项修复")
+        self.phase_changed.emit("本机诊断 · 执行单项修复")
+        self.scan_progress.setRange(0, 0)
+        self.scan_status.setText("正在准备修复…")
+        self.repair_thread = QThread(self)
+        self.repair_worker = RepairWorker(suggestion, second_confirmation)
+        self.repair_worker.moveToThread(self.repair_thread)
+        self.repair_thread.started.connect(self.repair_worker.run)
+        self.repair_worker.progress.connect(self.scan_status.setText)
+        self.repair_worker.completed.connect(self._repair_completed)
+        self.repair_worker.failed.connect(self._repair_failed)
+        self.repair_worker.finished.connect(self.repair_thread.quit)
+        self.repair_worker.finished.connect(self.repair_worker.deleteLater)
+        self.repair_thread.finished.connect(self.repair_thread.deleteLater)
+        self.repair_thread.finished.connect(self._repair_thread_finished)
+        self.repair_thread.start()
+
+    def _repair_completed(self, outcome) -> None:
+        if outcome.backup_id and outcome.action_id in {"disable_hkcu_startup", "reset_user_proxy"}:
             self.rollback_ids.append(outcome.backup_id)
             self.rollback_button.setEnabled(True)
-        self.last_operation_message = outcome.message
-        QMessageBox.information(self, "操作已执行", outcome.message + "\n现在将自动重新进行只读检查。")
-        self._start_scan()
+        restart = "\n此操作需要你稍后自行重启电脑；HelpPack 不会自动重启。" if outcome.restart_required else ""
+        self.last_operation_message = outcome.message + "\n" + outcome.recheck_summary + restart
+        from ..redaction import redact_text
+        self.operation_summaries.append(redact_text(f"{outcome.action_id}：{self.last_operation_message}"))
+        QMessageBox.information(self, "操作已完成", self.last_operation_message + "\n现在将重新进行只读检查。")
+        self.scan_progress.setRange(0, 100)
+        self._recheck_after_repair = True
+
+    def _repair_failed(self, message: str) -> None:
+        self.scan_progress.setRange(0, 100)
+        QMessageBox.warning(self, "修复未完成", f"没有确认修复成功：{message}")
+        self.pages.setCurrentIndex(2)
+        self.phase_changed.emit("本机诊断 · 查看证据")
+
+    def _repair_thread_finished(self) -> None:
+        self.repair_thread = None
+        self.repair_worker = None
+        if getattr(self, "_recheck_after_repair", False):
+            self._recheck_after_repair = False
+            self._start_scan()
 
     def _confirm_rollback(self) -> None:
         if not self.rollback_ids:
@@ -385,4 +478,7 @@ class DiagnosticPage(QWidget):
 
     def _attach_report(self) -> None:
         if self.summary is not None:
-            self.add_to_help_pack.emit(generate_diagnostic_markdown(self.summary))
+            report = generate_diagnostic_markdown(self.summary)
+            if self.operation_summaries:
+                report += "\n\n## 本次修复记录（已脱敏）\n\n" + "\n\n".join(self.operation_summaries)
+            self.add_to_help_pack.emit(report)

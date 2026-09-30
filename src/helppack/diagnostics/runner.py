@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 
@@ -71,6 +73,30 @@ class CommandRunner:
             ],
             timeout=timeout,
         )
+
+    def run_repair(self, args: list[str], *, timeout: float) -> CommandResult:
+        """Do not terminate a process modifying drivers or Windows components."""
+        allowed = {"ipconfig.exe", "netsh.exe", "wsreset.exe", "sc.exe", "powershell.exe", "w32tm.exe", "dism.exe", "sfc.exe", "pnputil.exe"}
+        name = args[0].lower()
+        if name not in allowed or any(any(c in item for c in "\x00\r\n") for item in args):
+            raise ValueError("修复命令不在允许列表")
+        system32 = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
+        executable = system32 / ("WindowsPowerShell/v1.0/powershell.exe" if name == "powershell.exe" else name)
+        safe_args = [str(executable), *args[1:]]
+        # communicate(timeout=...) with subprocess.run kills a child on timeout.
+        # Repair commands must be allowed to finish their system transaction.
+        try:
+            process = subprocess.Popen(safe_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False,
+                                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            try:
+                stdout, stderr = process.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                stdout, stderr = process.communicate()
+            return CommandResult(tuple(safe_args), process.returncode, _text(stdout), _text(stderr))
+        except FileNotFoundError:
+            return CommandResult(tuple(safe_args), -1, "", "命令不可用", unsupported=True)
+        except PermissionError:
+            return CommandResult(tuple(safe_args), -1, "", "权限不足", permission_denied=True)
 
 
 def _text(value: str | bytes | None) -> str:

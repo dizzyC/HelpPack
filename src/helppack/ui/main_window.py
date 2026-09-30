@@ -446,7 +446,7 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         if self.diagnostic_page.is_running:
-            QMessageBox.information(self, "正在诊断", "请先取消或等待当前只读诊断完成后再关闭。")
+            QMessageBox.information(self, "操作进行中", "请等待修复完成，或取消只读诊断后再关闭。")
             event.ignore()
             return
         event.accept()

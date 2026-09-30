@@ -10,7 +10,18 @@ from .ui.font import configure_local_font
 from .ui.main_window import create_window
 
 
+def _maybe_run_elevated_helper() -> int | None:
+    if len(sys.argv) == 4 and sys.argv[1] == "--elevated-helper":
+        from .diagnostics.elevation import run_elevated_helper
+
+        return run_elevated_helper(sys.argv[2], sys.argv[3])
+    return None
+
+
 def main() -> int:
+    helper_result = _maybe_run_elevated_helper()
+    if helper_result is not None:
+        return helper_result
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )

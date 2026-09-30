@@ -29,9 +29,10 @@ class DiagnosticCheck(Protocol):
 
 
 class ScanContext:
-    def __init__(self, runner: CommandRunner, cancel_event: threading.Event) -> None:
+    def __init__(self, runner: CommandRunner, cancel_event: threading.Event, category: str = "综合检查") -> None:
         self.runner = runner
         self.cancel_event = cancel_event
+        self.category = category
 
     def ensure_not_cancelled(self) -> None:
         if self.cancel_event.is_set():
@@ -61,8 +62,8 @@ class DiagnosticEngine:
         started = datetime.now().astimezone()
         cancel = cancel_event or threading.Event()
         callback = progress or (lambda _percent, _message: None)
-        selected = [check for check in self.checks if category == "综合检查" or category in check.categories]
-        context = ScanContext(self.runner, cancel)
+        selected = [check for check in self.checks if (category == "综合检查" and not getattr(check, "explicit_only", False)) or category in check.categories]
+        context = ScanContext(self.runner, cancel, category)
         results: list[DiagnosticResult] = []
         cancelled = False
         for index, check in enumerate(selected):

@@ -21,6 +21,7 @@ from .models import (
     DiagnosticStatus,
     Evidence,
     RepairSuggestion,
+    RollbackCapability,
     SafetyLevel,
     Severity,
 )
@@ -245,7 +246,7 @@ class CrashEventCheck:
 class NetworkCheck:
     check_id = "network.connectivity"
     display_name = "网络配置、DNS 与 HTTPS"
-    categories = frozenset({"网络或Wi-Fi异常", "软件或浏览器异常"})
+    categories = frozenset({"网络或Wi-Fi异常", "软件或浏览器异常", "Microsoft Store 问题"})
 
     def run(self, context: ScanContext) -> list[DiagnosticResult]:
         interfaces: list[str] = []
@@ -270,19 +271,34 @@ class NetworkCheck:
             https = f"失败（{type(exc).__name__}）"
         status = DiagnosticStatus.NORMAL if dns == "正常" and https.startswith("成功") else DiagnosticStatus.NOTICE
         raw_interfaces = "\n".join(interfaces) or "没有网络接口数据"
+        repairs: list[RepairSuggestion] = []
+        if dns != "正常":
+            repairs.append(RepairSuggestion(
+                action_id="flush_dns_cache",
+                display_name="清除 DNS 客户端缓存",
+                target={},
+                safety_level=SafetyLevel.L1,
+                requires_admin=False,
+                impact="只清除本机缓存的域名解析结果，不会更改 DNS 服务器。",
+                operation_preview="运行 Windows 内置 ipconfig /flushdns，并重新解析两个测试域名",
+                rollback="无需回滚；后续解析会重新写入缓存。",
+                rollback_capability=RollbackCapability.NONE,
+                evidence_ids=[self.check_id],
+                estimated_seconds=20,
+            ))
         return [_result(
             self.check_id, "网络或Wi-Fi异常", self.display_name, status,
             [Evidence("网络接口", redact_text(raw_interfaces)), Evidence("DNS 解析", dns), Evidence("HTTPS 连接", https)],
             "DNS 和 HTTPS 分别测试，任一失败都只代表本次指定目标测试失败，不等同于整个互联网不可用。",
             ["结合适配器、代理、DNS 和系统时间结果继续排查。"], severity=Severity.MEDIUM if status == DiagnosticStatus.NOTICE else Severity.INFO,
-            confidence="中（单次连接测试）"
+            confidence="中（单次连接测试）", repairs=repairs
         )]
 
 
 class ProxyHostsCheck:
     check_id = "network.proxy_hosts"
     display_name = "当前用户代理、PAC 与 Hosts"
-    categories = frozenset({"网络或Wi-Fi异常", "软件或浏览器异常"})
+    categories = frozenset({"网络或Wi-Fi异常", "软件或浏览器异常", "Microsoft Store 问题"})
 
     def run(self, context: ScanContext) -> list[DiagnosticResult]:
         if platform.system() != "Windows":
@@ -496,6 +512,15 @@ class BatteryDiskHealthCheck:
 
 
 def default_checks() -> list[Any]:
+    from .advanced_checks import (
+        DriverUpdateCheck,
+        MicrosoftStoreCheck,
+        NetworkRepairEligibilityCheck,
+        SystemRepairCheck,
+        VendorDriverSourceCheck,
+    )
+    from .tls import InternetTlsCheck
+
     return [
         PerformanceCheck(),
         DiskAndTempCheck(),
@@ -506,8 +531,14 @@ def default_checks() -> list[Any]:
         NetworkCheck(),
         ProxyHostsCheck(),
         NetworkConfigurationCheck(),
+        NetworkRepairEligibilityCheck(),
+        InternetTlsCheck(),
+        MicrosoftStoreCheck(),
         DeviceServiceCheck(),
         PnpDeviceCheck(),
+        DriverUpdateCheck(),
+        VendorDriverSourceCheck(),
+        SystemRepairCheck(),
         PrinterCheck(),
         UpdateCheck(),
         UpdateHistoryCheck(),

@@ -29,6 +29,19 @@ class SafetyLevel(StrEnum):
     L3 = "L3"
 
 
+class RollbackCapability(StrEnum):
+    FULL = "可完整回滚"
+    BEST_EFFORT = "仅能尽力回滚"
+    NONE = "不可自动回滚"
+
+
+class RestartRequirement(StrEnum):
+    NONE = "无需重启"
+    APP = "需要重启应用"
+    SERVICE = "需要重启服务"
+    SYSTEM = "需要重启电脑后验证"
+
+
 @dataclass(slots=True)
 class Evidence:
     label: str
@@ -45,6 +58,18 @@ class RepairSuggestion:
     impact: str
     operation_preview: str
     rollback: str
+    rollback_capability: RollbackCapability = RollbackCapability.FULL
+    restart_requirement: RestartRequirement = RestartRequirement.NONE
+    requires_network: bool = False
+    side_effects: list[str] = field(default_factory=list)
+    evidence_ids: list[str] = field(default_factory=list)
+    estimated_seconds: int = 10
+    requires_second_confirmation: bool = False
+    confirmation_phrase: str = ""
+
+    @property
+    def risk_level(self) -> SafetyLevel:
+        return self.safety_level
 
 
 @dataclass(slots=True)
