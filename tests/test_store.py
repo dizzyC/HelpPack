@@ -39,7 +39,7 @@ def test_query_failure_is_unknown_not_uninstalled():
     result = diagnose(runner)
     assert result.status == DiagnosticStatus.UNKNOWN
     assert not result.repair_suggestions
-    assert "不代表" in result.explanation
+    assert 'does not prove' in result.explanation
 
 
 @pytest.mark.parametrize("invalid", [None, "false", 0])
@@ -51,7 +51,7 @@ def test_incomplete_or_wrong_boolean_probe_rejected(invalid):
 def test_registered_does_not_claim_successful_startup():
     result = diagnose(StoreRunner())
     assert result.status == DiagnosticStatus.NORMAL
-    assert "不是启动成功" in result.explanation
+    assert 'does not prove Store starts' in result.explanation
     assert "store_reset_data" not in {r.action_id for r in result.repair_suggestions}
 
 
@@ -60,7 +60,7 @@ def test_user_unregistered_not_machine_uninstalled(monkeypatch):
     runner = StoreRunner(Exists=False, ManifestExists=False)
     result = diagnose(runner)
     assert not result.repair_suggestions
-    assert "机器级" in result.evidence[0].value
+    assert 'machine-wide' in result.evidence[0].value
     for action in ("store_reregister", "store_cache_reset", "store_reset_data"):
         with pytest.raises(RepairExecutionError):
             check_preconditions(action, {}, runner)

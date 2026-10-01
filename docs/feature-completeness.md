@@ -1,60 +1,11 @@
-# 功能完整性审查与实施记录
+# Feature Completeness and Edition Boundary
 
-基线：v0.2.2。审查日期：2026-10-01。新的开发内容尚未发布。
+The English branch contains the completed local Chinese baseline plus centralized English presentation. Original `main` and its uncommitted Chinese additions are preserved in a separate checkout. This is not a merge, a new Release or proof that unpublished Chinese additions are already on remote `main`.
 
-| 功能 | 原有实现 | 本轮目标 |
-|---|---|---|
-| 求助包和脱敏 | 已运行并验证；截图仅直接复制 | 加入处理后的截图副本与简洁摘要 |
-| 症状向导 | 只有问题类别选择 | 本地自然语言规则/预设路由、有证据的检查结果 |
-| 网络定位 | 固定目标 DNS/HTTPS，部分代理信息 | 用户目标、逐层结果、指定 DNS 与直连/代理对照 |
-| 软件专项 | 常见浏览器和通用崩溃事件；没有指定 EXE | 进程/EXE 选择、版本签名、相关事件与运行库线索 |
-| 空间分析 | 分区容量、有界临时目录统计；无清理执行 | 用户目录排行、取消、清理预览与可恢复移出 |
-| 外设 | 服务/PnP 与打印机有限信息 | 音频端点、蓝牙配对状态、打印队列、主动试听/确认打印 |
-| 历史/前后对比 | 仅 latest_scan.json；修复后复查但不比较 | 多条历史、状态标记、操作与证据变化 |
-| 时间线 | 分散事件摘要 | 按时间合并可读记录，相关性非因果 |
-| 监测 | 无实现 | 10 分钟环形缓存、最长两小时、故障前后片段 |
+Real entries and executable logic exist for the Support Bundle wizard, read-only Diagnostics, symptom routing, layered networking, software scenarios, selected-folder analysis, peripherals, local history/comparison, event timeline, resource monitoring and screenshot editing.
 
-验收区分自动化/模拟、当前机器只读与真实修改。不会为验证而修改当前电脑的网络、驱动、服务或用户文件。
+The [capability matrix](diagnostic-capability-matrix.md) distinguishes checks, confirmed changes, high-risk actions and manual guidance. Automatic INF installation is deliberately blocked, and vendor connectors open official pages rather than pretending to implement unsupported metadata/download APIs.
 
-## 实现与操作流程验证
+Fixed product text comes from local English resources. Compatibility categories, action/check IDs, enum values and persisted keys are unchanged. Choice controls separate visible labels from stored values. Templates translate before interpolating opaque input, so user descriptions, attachment names, paths and original logs remain untouched except privacy redaction.
 
-首页入口：**症状向导与专项排查**。八个分页均有真实后台任务入口，截图编辑仍位于问题填写页，处理状态和未解决问题会进入报告。新增内容未分配正式发布版本，未上传 GitHub 或创建 Release。
-
-| 能力 | 实现状态 | 已执行的验证 | 不能据此宣称的内容 |
-|---|---|---|---|
-| 症状向导 | 本地规则/七个预设，按分类选择只读检查，证据与专项下一步 | 七种路由、多分类/未知输入测试；按钮→后台→报告→历史；本机“突然变卡”四项检查 | 不是 AI 因果推断；未提供的网站/EXE 不会自动猜测 |
-| 网络分层 | 适配器、网关、两条 DNS、静态代理、两条 HTTPS、目标服务 | 指定本机已有 DNS 查询微软域名，直连/代理均有 HTTP 响应；失败/差异模拟及 DNS 报文校验 | 不模拟 PAC/WPAD、登录及页面脚本；网关 ICMP 未响应不证明断网 |
-| 软件专项 | 运行程序/本机 EXE 选择，四种场景，版本/签名/进程/应用事件/运行库/拦截日志 | 四场景模拟；本机 Python EXE 只读：版本、进程、注册和日志接口可读 | 本机 PowerShell 签名模块不可加载，签名未真实验证；依赖注册不是完整性证明 |
-| 空间分析 | 分区、目录排行、分类、取消、有界扫描、单项隔离及持久恢复清单 | 扫描项目源码；临时虚构缓存逐项拒绝/确认移出/重扫/恢复；硬链接去重、路径越界、文件变化拒绝 | 未清理用户文件；同盘隔离不释放空间；缓存名称分类不是安全删除证明 |
-| 外设 | 音量/静音、音频服务/设备、经典蓝牙、打印机状态/队列；主动试听与单独确认打印 | 本机相关只读接口可读；试听选定输出和应用音量模拟；拒绝打印不创建任务 | 未播放真实声音、未提交实体打印；经典蓝牙不完整覆盖 BLE |
-| 历史/前后对比 | 多条脱敏记录、三种处理状态、同类/同目标对比、修复操作与复检变化持久化 | 保存→重新读取→标记→比较→加入报告；模拟变化、损坏记录跳过 | 没有在本机执行真实修复来证明故障解决；变化不证明因果 |
-| 时间线 | 有界 30 天安装/更新/驱动配置/崩溃/异常关机事件，时间排序 | 三个本机事件来源均读取；模拟排序及非因果提示 | 日志轮转/权限限制会缺失，不是完整安装或驱动更新审计 |
-| 间歇监测 | 2 秒采样、10 分钟缓冲、最多 2 小时、前 60/后 30 秒片段、提前停止与退出停止 | 本机五次采样；Qt 实际采样→标记→停止→本地记录；边界时间与计数回退模拟 | 未实际连续监测两小时；采样耗时不是应用全部资源开销，null 不代表零活动 |
-| 报告与截图 | 未解决问题/状态、诊断和操作摘要、裁剪/不透明遮挡、处理副本、预览摘要 | 合成 PNG 裁剪/遮挡/撤销、去除文字元数据、原图哈希不变；ZIP 使用处理副本、manifest 无路径且 SHA-256 一致 | 不进行 OCR；自动脱敏不能覆盖所有私人内容，用户仍需预览 |
-
-## 实际执行记录（2026-10-01）
-
-- 全部 pytest：111 项通过；包含原有安全边界、权限、脱敏、导出、修复模拟和新功能测试。
-- Ruff：最终检查无错误。发现的验证脚本无时区时间已修正。
-- `verify_ui_runtime.py`：通过；12 个滚动区域、16 次后台响应 tick、取消、页面切换、长文字保留、中文无替换字符。
-- `verify_feature_completeness.py --live`：完成本机只读流程、历史重读和报告/ZIP 内容校验。原始结果仅在被忽略的 `dist/validation/completeness_*`，不公开本机信息。
-- 原生 Qt 窗口使用 `windows` 平台实际启动；应用内宽窗/窄窗渲染截图已观察，5834 字符及 `HELPPACK_END` 末尾标记完整可见。截图位于 `dist/validation/desktop_completeness`，没有真实用户内容。
-- 外部 computer-use 窗口绑定报错，刷新并重试仍失败。因此外部鼠标点击验收未通过，不能用应用内 Qt 测试替代这一声明。
-- PyInstaller 独立验收构建位于 `dist/completeness-preview/HelpPack.exe`，大小 56,406,275 字节，不覆盖 `dist/v0.2.2/HelpPack.exe`。源码启动/定时退出返回 0；复制后的单文件 EXE 在独立目录、仅 Windows 系统 PATH 且无 PYTHONPATH 的条件下启动/退出返回 0。这不等于干净 Windows 虚拟机兼容测试或打包版全部功能实测。
-- 最终 EXE SHA-256：`D946A863EDD2FA18DBC070DF0B46006A0FC17E09D19DBF877F8C5606E3433195`。
-- 最终敏感内容扫描：87 个源码/测试/文档文件，阻断项 0；虚构测试令牌明确识别为合成数据。`git diff --check` 无错误。构建、真实只读报告、ZIP、截图与缓存位于忽略目录，不进入源码提交。
-- 没有执行系统修复、真实声音试听、实体打印、驱动安装或网络修改。没有 GitHub 推送或新 Release。
-
-## 入口与复现命令
-
-```powershell
-.\.venv\Scripts\python.exe -m pytest
-.\.venv\Scripts\ruff.exe check src tests scripts helppack_launcher.py
-.\.venv\Scripts\python.exe scripts\verify_feature_completeness.py --live
-.\.venv\Scripts\python.exe scripts\verify_feature_completeness.py --desktop
-.\build.ps1 -OutputDirectory dist\completeness-preview -WorkDirectory build\completeness-preview
-```
-
-当前机器只读结果不等于 Windows 10/11 全版本兼容性或修复真实验收。发布前需补齐实体设备验证、隔离修复环境以及新增 Qt Multimedia 后端的完整第三方分发义务；本轮未进行发布。
-
-经典蓝牙覆盖边界参考微软 [BluetoothFindFirstDevice 文档](https://learn.microsoft.com/en-us/windows/win32/api/bluetoothapis/nf-bluetoothapis-bluetoothfindfirstdevice)，端点静音/音量读取参考 [IAudioEndpointVolume](https://learn.microsoft.com/en-us/windows/win32/api/endpointvolume/nn-endpointvolume-iaudioendpointvolume)。
+The current [verification report](verification-report.md) is authoritative for this branch. Native Qt rendering and app-internal control activation are recorded separately from external mouse interaction, physical hardware and actual system repair. Mocked tests are never described as real repairs.

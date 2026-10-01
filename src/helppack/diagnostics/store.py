@@ -1,6 +1,8 @@
 """Shared Microsoft Store probe and version-compatible repair commands."""
 from __future__ import annotations
 
+from helppack.english import text as msg
+
 FAMILY = "Microsoft.WindowsStore_8wekyb3d8bbwe"
 
 STORE_PROBE = r"""
@@ -34,19 +36,19 @@ $p=Get-AppxPackage -Name Microsoft.WindowsStore -ErrorAction Stop |
   Where-Object {$_.PackageFamilyName -eq 'Microsoft.WindowsStore_8wekyb3d8bbwe'} | Select-Object -First 1;
 if($p -and $p.InstallLocation) {
   $manifest=Join-Path $p.InstallLocation 'AppxManifest.xml';
-  if(-not (Test-Path -LiteralPath $manifest)){throw 'Store 安装文件不完整，请使用 Windows 修复设置'};
+  if(-not (Test-Path -LiteralPath $manifest)){throw 'Store installation files are incomplete; use Windows Repair Settings'};
   Add-AppxPackage -DisableDevelopmentMode -Register $manifest -ErrorAction Stop;
-} else {throw '当前用户未注册商店；需先确认机器级包存在，不能直接执行注册'};
-if(-not (Get-AppxPackage -Name Microsoft.WindowsStore -ErrorAction Stop)){throw '未恢复当前用户注册'};
+} else {throw 'Store is unregistered for this user; verify machine-wide package presence before registration'};
+if(-not (Get-AppxPackage -Name Microsoft.WindowsStore -ErrorAction Stop)){throw 'Current-user registration was not restored'};
 """
 
 
 def read_store_state(runner) -> dict:
     command = runner.powershell_json(" ".join(STORE_PROBE.splitlines()), timeout=30)
     if command.timed_out or command.returncode != 0:
-        raise RuntimeError("商店状态读取失败，不能据此判断应用缺失")
+        raise RuntimeError(msg('商店状态读取失败，不能据此判断应用缺失'))
     state = command.json_value()
     fields = ("Exists", "PolicyDisabled", "CanRegisterByFamily", "CanReset", "ManifestExists", "WsresetAvailable")
     if not isinstance(state, dict) or any(type(state.get(field)) is not bool for field in fields):
-        raise ValueError("商店检查没有返回完整、可验证的数据")
+        raise ValueError(msg('商店检查没有返回完整、可验证的数据'))
     return state

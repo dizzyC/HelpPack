@@ -43,10 +43,10 @@ def test_diagnostic_report_is_redacted_and_can_be_embedded() -> None:
         diagnostics_markdown=diagnostic,
     )
     report = generate_markdown(bundle)
-    assert "## 本机只读诊断结果" in report
-    assert "本次扫描只执行 L0 只读检查" in report
+    assert '## Read-Only Diagnostics' in report
+    assert "L0 read-only checks" in report
 
 
 def test_cancelled_report_is_explicit() -> None:
     summary = ScanSummary("综合检查", "start", "end", True, [])
-    assert "用户已取消，结果不完整" in generate_diagnostic_markdown(summary)
+    assert 'Cancelled by user; incomplete results' in generate_diagnostic_markdown(summary)

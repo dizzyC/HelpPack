@@ -21,6 +21,7 @@ INCLUDED_FILES = [
         "build.ps1",
         "helppack.spec",
         "helppack_launcher.py",
+        "version_info.txt",
     )
 ]
 TEXT_SUFFIXES = {".py", ".md", ".txt", ".toml", ".ps1", ".spec", ".gitignore"}

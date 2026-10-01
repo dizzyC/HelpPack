@@ -25,8 +25,11 @@ def main() -> int:
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
+    if len(sys.argv) == 3 and sys.argv[1] == "--self-check":
+        from .validation import run_self_check
+        return run_self_check(sys.argv[2])
     app = QApplication(sys.argv)
-    app.setApplicationName("HelpPack")
+    app.setApplicationName("HelpPack-English")
     app.setOrganizationName("HelpPack")
     configure_local_font(app)
     window = create_window()  # noqa: F841 - keep the top-level window alive through app.exec()

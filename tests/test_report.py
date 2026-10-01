@@ -46,28 +46,28 @@ def make_bundle(tmp_path: Path | None = None) -> ReportBundle:
 def test_generates_structured_markdown(tmp_path: Path) -> None:
     report = generate_markdown(make_bundle(tmp_path))
     for heading in (
-        "## 问题摘要",
-        "## 用户描述",
-        "## 已尝试的操作",
-        "## 系统环境",
-        "## 硬件和资源状态",
-        "## 网络检测结果",
-        "## 附件列表",
-        "## 隐私处理说明",
+        '## Problem Summary',
+        '## Your Description',
+        '## Actions Already Tried',
+        '## System Environment',
+        '## Hardware and Resources',
+        '## Network Checks',
+        '## Attachments',
+        '## Privacy Notes',
     ):
         assert heading in report
-    assert "不是确定的故障结论" in report
+    assert "not confirmed causes" in report
     assert "screen.png" in report
     assert str(tmp_path) not in report
 
 
 def test_can_exclude_system_fields() -> None:
     report = generate_markdown(make_bundle(), included_fields=["windows_version"])
-    assert "Windows 版本：Windows 11" in report
+    assert 'Windows Version: Windows 11' in report
     assert "Example CPU" not in report
 
 
 def test_unavailable_value_is_rendered() -> None:
     bundle = make_bundle()
     bundle.snapshot.gpu = UNAVAILABLE
-    assert "显卡：无法读取" in generate_markdown(bundle)
+    assert 'Graphics: Unable to read' in generate_markdown(bundle)

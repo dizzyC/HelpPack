@@ -11,6 +11,9 @@ from typing import Any
 
 import psutil
 
+from helppack.english import text as msg
+
+from .english import label
 from .models import UNAVAILABLE, SystemSnapshot
 
 ProgressCallback = Callable[[int, str], None]
@@ -34,25 +37,25 @@ def collect_system_info(progress: ProgressCallback | None = None) -> SystemSnaps
         ("boot_time", lambda: datetime.fromtimestamp(psutil.boot_time()).astimezone().isoformat(timespec="seconds")),
     ]
     labels = {
-        "windows_version": "读取 Windows 版本",
-        "architecture": "读取系统架构",
-        "cpu": "读取处理器信息",
-        "logical_cores": "读取处理器核心数",
-        "memory": "读取内存状态",
-        "disks": "读取磁盘空间",
-        "gpu": "读取显卡信息",
-        "network_interfaces": "检查网络接口",
-        "gateway": "检测默认网关",
-        "dns_status": "检测 DNS 解析",
-        "current_time": "记录当前时间",
-        "boot_time": "读取开机时间",
+        "windows_version": msg('读取 Windows 版本'),
+        "architecture": msg('读取系统架构'),
+        "cpu": msg('读取处理器信息'),
+        "logical_cores": msg('读取处理器核心数'),
+        "memory": msg('读取内存状态'),
+        "disks": msg('读取磁盘空间'),
+        "gpu": msg('读取显卡信息'),
+        "network_interfaces": msg('检查网络接口'),
+        "gateway": msg('检测默认网关'),
+        "dns_status": msg('检测 DNS 解析'),
+        "current_time": msg('记录当前时间'),
+        "boot_time": msg('读取开机时间'),
     }
     values: dict[str, Any] = {}
     total = len(probes)
     for index, (key, probe) in enumerate(probes, start=1):
         callback(int((index - 1) / total * 100), labels[key])
         values[key] = _safe_probe(probe)
-    callback(100, "收集完成")
+    callback(100, msg('收集完成'))
 
     memory = values.get("memory")
     gateway = values.get("gateway")
@@ -115,7 +118,7 @@ def _disks() -> str:
         except (OSError, PermissionError):
             continue
         rows.append(
-            f"{partition.device or partition.mountpoint} 总计 {_format_bytes(usage.total)}，剩余 {_format_bytes(usage.free)}"
+            msg('{0} 总计 {1}，剩余 {2}', partition.device or partition.mountpoint, _format_bytes(usage.total), _format_bytes(usage.free))
         )
     return "\n".join(rows) or UNAVAILABLE
 
@@ -174,8 +177,8 @@ def _network_interfaces() -> str:
     rows: list[str] = []
     for name in sorted(stats):
         item = stats[name]
-        state = "已连接" if item.isup else "未连接"
-        speed = f"，速率 {item.speed} Mbps" if item.speed and item.speed > 0 else ""
+        state = msg('已连接') if item.isup else msg('未连接')
+        speed = msg('，速率 {0} Mbps', item.speed) if item.speed and item.speed > 0 else ""
         rows.append(f"{name}：{state}{speed}")
     return "\n".join(rows) or UNAVAILABLE
 
@@ -193,7 +196,7 @@ def _gateway_status() -> str:
     ).stdout
     match = re.search(r"^\s*0\.0\.0\.0\s+0\.0\.0\.0\s+(\d{1,3}(?:\.\d{1,3}){3})", output, re.MULTILINE)
     if not match:
-        return "未检测到默认网关"
+        return msg('未检测到默认网关')
     gateway = match.group(1)
     completed = subprocess.run(
         ["ping", "-n", "1", "-w", "1500", gateway],
@@ -202,12 +205,12 @@ def _gateway_status() -> str:
         check=False,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
-    return "可达" if completed.returncode == 0 else "未响应"
+    return msg('可达') if completed.returncode == 0 else msg('未响应')
 
 
 def _dns_status() -> str:
     socket.getaddrinfo("www.microsoft.com", 443, type=socket.SOCK_STREAM)
-    return "正常"
+    return label("正常")
 
 
 def _run_powershell(script: str) -> str:
@@ -226,8 +229,8 @@ def _run_powershell(script: str) -> str:
 
 def _format_bytes(value: int) -> str:
     amount = float(value)
-    for unit in ("B", "KB", "MB", "GB", "TB"):
-        if amount < 1024 or unit == "TB":
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if amount < 1024 or unit == "TiB":
             return f"{amount:.1f} {unit}"
         amount /= 1024
-    return f"{amount:.1f} TB"
+    return f"{amount:.1f} TiB"

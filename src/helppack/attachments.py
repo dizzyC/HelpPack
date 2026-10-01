@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from helppack.english import text as msg
+
 from .models import Attachment
 
 ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg"}
@@ -14,7 +16,7 @@ class AttachmentError(ValueError):
 
 def add_attachments(existing: list[Attachment], paths: list[str | Path]) -> list[Attachment]:
     if len(existing) + len(paths) > MAX_ATTACHMENTS:
-        raise AttachmentError("最多只能添加 5 张截图，请先移除不需要的截图。")
+        raise AttachmentError(msg('最多只能添加 5 张截图，请先移除不需要的截图。'))
 
     known = {item.path.resolve() for item in existing}
     result = list(existing)
@@ -22,9 +24,9 @@ def add_attachments(existing: list[Attachment], paths: list[str | Path]) -> list
     for raw_path in paths:
         path = Path(raw_path)
         if path.suffix.lower() not in ALLOWED_EXTENSIONS:
-            raise AttachmentError("仅支持 PNG、JPG 或 JPEG 格式的截图。")
+            raise AttachmentError(msg('仅支持 PNG、JPG 或 JPEG 格式的截图。'))
         if not path.is_file():
-            raise AttachmentError(f"找不到截图文件：{path.name}")
+            raise AttachmentError(msg('找不到截图文件：{0}', path.name))
         resolved = path.resolve()
         if resolved in known:
             continue

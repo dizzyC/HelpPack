@@ -92,9 +92,10 @@ def test_network_layers_keep_failures_separate(monkeypatch):
     result = investigate_network("example.com", "192.0.2.53", event(), progress, runner=Runner(),
                                  resolver=failure, dns_query=lambda h, s: ["192.0.2.2"],
                                  https=lambda url, direct: (not direct, "模拟 HTTPS 响应"))
-    assert {f.layer for f in result.findings} >= {"适配器", "网关", "系统 DNS", "指定 DNS", "代理", "直连 HTTPS", "目标服务"}
-    assert any("系统 DNS 失败" in r for r in result.recommendations)
-    assert any("代理/绕过" in r for r in result.recommendations)
+    from helppack.english import label
+    assert {label(f.layer) for f in result.findings} >= {'Adapters', 'Gateway', 'System DNS', 'Custom DNS', 'Proxy', 'Direct HTTPS', 'Target Service'}
+    assert any("system DNS did not" in r for r in result.recommendations)
+    assert any("proxy and bypass" in r for r in result.recommendations)
     assert "192.0.2.2" not in result.markdown()
     stopped = event()
     stopped.set()
@@ -115,7 +116,7 @@ def test_history_persistence_status_operation_and_comparison(tmp_path):
     after = json.loads(json.dumps(before))
     after["results"][0]["evidence"][0]["value"] = "10%"
     assert "99% → 10%" in " ".join(compare_summaries(before, after))
-    assert "不代表" in compare_summaries(before, before)[0]
+    assert 'does not prove' in compare_summaries(before, before)[0]
     with pytest.raises(ValueError):
         store.load_record("../../outside")
     (tmp_path / ("record_" + "a" * 32 + ".json")).write_text("[]", encoding="utf-8")
@@ -195,7 +196,7 @@ def test_software_four_scenarios_never_execute_target(tmp_path, scenario):
     assert len(result.findings) == 6
     assert "quoted'' program.exe" in runner.scripts[0]
     assert all("Start-Process" not in s for s in runner.scripts)
-    assert "存在不等于" in result.markdown()
+    assert 'does not prove' in result.markdown()
     assert "11708" in runner.scripts[3] if scenario == "安装失败" else "1000" in runner.scripts[3]
 
 
@@ -212,7 +213,7 @@ def test_read_failures_are_not_health_claims(tmp_path, monkeypatch):
         if kind == "蓝牙":
             monkeypatch.setattr(peripherals, "classic_bluetooth", unavailable)
         result = inspect_peripherals(kind, event(), progress, Runner(failure=True))
-        assert "无法" in result.markdown() or "权限不足" in result.markdown()
+    assert "Unable to read" in result.markdown() or "Permission denied" in result.markdown()
 
 
 def test_timeline_order_limits_and_non_causal_warning():
@@ -222,7 +223,7 @@ def test_timeline_order_limits_and_non_causal_warning():
     result = collect_timeline(event(), progress, runner)
     report = result.markdown()
     assert report.index("2026-01-02") < report.index("2026-01-01")
-    assert "不直接证明" in report
+    assert 'does not prove' in report
     assert all("-MaxEvents 150" in s for s in runner.scripts)
 
 

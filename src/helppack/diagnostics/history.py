@@ -8,6 +8,9 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from helppack.english import text as msg
+
+from ..english import label as display_label
 from ..redaction import redact_text
 from .models import ScanSummary
 
@@ -38,7 +41,7 @@ class DiagnosticHistoryStore:
 
     def _path(self, record_id: str) -> Path:
         if not re.fullmatch(r"[a-f0-9]{32}", record_id):
-            raise ValueError("历史编号无效")
+            raise ValueError(msg('历史编号无效'))
         return self.root / f"record_{record_id}.json"
 
     def _write_record(self, record_id: str, value: dict) -> None:
@@ -50,9 +53,9 @@ class DiagnosticHistoryStore:
     def load_record(self, record_id: str) -> dict:
         value = json.loads(self._path(record_id).read_text(encoding="utf-8"))
         if not isinstance(value, dict):
-            raise TypeError("历史记录损坏")
+            raise TypeError(msg('历史记录损坏'))
         if value.get("id") != record_id:
-            raise ValueError("历史记录编号不匹配")
+            raise ValueError(msg('历史记录编号不匹配'))
         return value
 
     def list_records(self, limit: int = 100) -> list[dict]:
@@ -69,7 +72,7 @@ class DiagnosticHistoryStore:
 
     def mark(self, record_id: str, status: str) -> None:
         if status not in {"已解决", "未解决", "稍后处理"}:
-            raise ValueError("处理状态无效")
+            raise ValueError(msg('处理状态无效'))
         value = self.load_record(record_id)
         value["status"] = status
         self._write_record(record_id, value)
@@ -99,13 +102,13 @@ def compare_summaries(before: dict, after: dict) -> list[str]:
             continue
         name = current["display_name"]
         if previous.get("status") != current.get("status"):
-            changes.append(f"{name}：{previous.get('status')} → {current.get('status')}")
+            changes.append(f"{name}：{display_label(previous.get('status'))} → {display_label(current.get('status'))}")
         values = {e["label"]: e["value"] for e in previous.get("evidence", [])}
         for evidence in current.get("evidence", []):
             label = evidence["label"]
             if label in values and values[label] != evidence["value"]:
                 changes.append(f"{name} / {label}：{values[label]} → {evidence['value']}")
-    return [_redact_value(c) for c in changes] or ["可比较项目未发现变化；不代表故障已经解决。"]
+    return [_redact_value(c) for c in changes] or [msg('可比较项目未发现变化；不代表故障已经解决。')]
 
 def _redact_value(value: Any) -> Any:
     if isinstance(value, str):

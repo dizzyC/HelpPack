@@ -1,43 +1,62 @@
-# 求助包诊断报告
+# HelpPack Support Bundle
 
-## 问题摘要
-- 问题类型：软件无法启动或崩溃
-- 问题标题：示例软件双击后没有反应
+This example is entirely fictional. It was not collected from a real computer.
 
-## 用户描述
-双击桌面图标后短暂出现加载光标，随后没有窗口，也没有看到报错。
+## Problem Summary
 
-### 问题出现前的操作
-当天安装过一次 Windows 更新。
+- Type: Software Won't Start or Crashes
+- Title: Fictional Notes closes immediately
 
-## 已尝试的操作
-重启电脑；以管理员身份运行。
+## User Description
 
-## 系统环境
-- Windows 版本：Windows 11 Professional 11 10.0.26100
-- 系统架构：AMD64
-- 当前时间：2026-09-25T10:00:00+08:00
-- 最近开机时间：2026-09-25T08:00:00+08:00
+The fictional application displays a splash screen and closes without an error.
 
-## 硬件和资源状态
-- CPU：示例处理器
-- 逻辑核心数：16
-- 总内存：32.0 GB
-- 当前内存使用率：42.0%
-- 磁盘分区：C: 总计 953.9 GB，剩余 421.5 GB
-- 显卡：示例显卡
+### Changes Before the Problem
 
-## 网络检测结果
-- 网络接口状态：以太网：已连接，速率 1000 Mbps
-- 默认网关可达性：可达
-- DNS 解析：正常
+Installed a fictional application update.
 
-## 附件列表
-- error_screen.png
+## Actions Already Tried
 
-## 值得优先检查的方向
-以下内容仅是排查方向，不是确定的故障结论：请先结合报错信息、问题发生时间和可复现步骤进行核对。
+Restarted the application. No system repairs were performed.
 
-## 隐私处理说明
-本报告已自动尝试隐藏用户名、用户目录、IP 地址、MAC 地址、邮箱地址及常见密钥或密码字段。
-截图内容未进行 OCR 脱敏，导出前应由用户自行检查。自动脱敏可能无法覆盖所有敏感信息。
+## System Environment
+
+- Windows: Windows 11 (fictional environment)
+- Architecture: AMD64
+- Check time: 2026-10-01 14:30:00 UTC+08:00
+- User: <USERNAME>
+- Home directory: <USER_PATH>
+
+## Hardware and Resource Status
+
+- CPU: Fictional Processor, 8 logical cores
+- Memory: 16.0 GiB; 42% used
+- Disk: 256.0 GiB; 90.0 GiB available
+- Graphics: Unable to read
+
+## Network Findings
+
+- Gateway: Reachable during the fictional check
+- DNS: Resolved the fictional test target
+- Address: <IP_ADDRESS>
+- MAC: <MAC_ADDRESS>
+
+## Evidence and Recommended Actions
+
+An application crash event occurred at the reported time. This is a clue, not a confirmed cause. Review the application's update notes and run the targeted software check. Runtime presence alone does not establish runtime health.
+
+## Before and After
+
+No repairs have been performed; no improvement is claimed.
+
+## Unresolved Issues
+
+Application startup remains unverified.
+
+## Attachments
+
+None.
+
+## Privacy Handling
+
+Processing is local. Known personal identifiers and secrets are replaced with placeholders. Redaction cannot guarantee removal of every sensitive detail. Review the text and manually inspect any screenshot before exporting.

@@ -8,9 +8,9 @@ from PySide6.QtWidgets import QApplication
 
 
 def configure_local_font(app: QApplication) -> str:
-    """Load an installed Windows CJK font without bundling or downloading fonts."""
+    """Use local Segoe UI, retaining Windows fallback for Unicode user input."""
     fonts_root = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"
-    for filename in ("msyh.ttc", "Deng.ttf", "simhei.ttf", "simsun.ttc"):
+    for filename in ("segoeui.ttf", "msyh.ttc", "Deng.ttf", "simhei.ttf", "simsun.ttc"):
         path = fonts_root / filename
         if not path.is_file():
             continue

@@ -1,58 +1,7 @@
-# v0.2.2 验证记录
+# Historical Verification Scope — Chinese v0.2.2
 
-日期：2026-09-30。版本命名由用户调整为 v0.2.2。用户在阅读隔离实测未完成的说明后，明确确认“我已确认可上传”；本次按该确认发布，不将未完成的验收改写为通过。
+Earlier Chinese v0.2.2 verification covered tests, read-only checks, packaging and local launch observations. Those earlier results are not evidence of real English-Windows validation or successful system repairs in this English task.
 
-发布操作恢复日期：2026-10-01。再次确认远程 main 仍是原初始提交，且没有 v0.2.2 标签或 Release；保留历史并以普通推送更新。
+Store registration/cache/configuration checks must not be described as proof of working Store pages. TLS options are constrained by OS support; managed policy is never bypassed. Repairs and physical hardware need separate controlled validation.
 
-## 本轮修正
-
-- 商店查询失败显示未知，不再推断包缺失。
-- 区分当前用户未注册与整机卸载。未确认机器级包存在时不执行注册恢复；已注册包使用实际安装目录的清单，不硬编码包版本。
-- 组织策略禁用时不提供修复；当前用户操作拒绝管理员上下文。数据重置不作为默认推荐。
-- 加入 Internet TLS 只读检查和 0x80131500 的官方处理指引，检查用户设置、协议策略及 Schannel 显式禁用项。
-- TLS 1.3 按 Windows 支持版本区分；缺少显式配置不判定为禁用。不启用旧 TLS/SSL，不绕过证书或组织策略。
-
-## 已执行
-
-- pytest：69 项通过，包括新增商店与 TLS 回归测试。模拟测试不等于真实系统修复通过。
-- 源码启动烟雾检查通过。
-- Qt 自动验证：1200×800 缩放、页面切换、4 个滚动区域、中文、后台响应、取消与长文本检查通过。
-- Markdown/ZIP/manifest 内容验证通过，2 个文件的 SHA-256 一致。
-- 本机综合只读扫描重新运行，21 项完成（含 TLS）；启动项/代理前后快照一致，执行修复数 0，报告隐私检查通过。权限、接口和硬件限制仍以单项结果为准，不能将所有诊断数据都标为真实验证通过。
-- 本机 TLS 新检查单独运行通过：读取结果为系统默认、未发现 SecureProtocols 策略；未验证实际 TLS 握手或商店启动。
-- 本轮发布内容扫描 73 个文本文件未发现阻断项（含发行说明）；Ruff 与 git diff --check 通过。
-- 加入 TLS 检查后已重新构建单文件 EXE：`dist/v0.2.2/HelpPack.exe`。
-- 最新 EXE 离屏启动检查退出码 0；不计为真实窗口交互或系统修复验收。
-- 最新 EXE 在真实桌面启动，点击首页“本机诊断”、选择 Microsoft Store 问题、执行只读检查并查看结果通过；4 项结果完成。TLS 完整建议与商店注册边界已通过辅助功能树及窗口截图观察，详情区域能够滚动。
-- 桌面会话中当前用户的 TLS 1.2/1.3 选项已勾选、商店包已注册；之前受限执行环境的不同结果不能作为桌面用户的最终状态。不记录身份或真实网络配置。未实际启动 Store 或验证商店页面加载，不宣称故障已修复。
-
-## 尚未完成的发布门禁
-
-- 没有可用的隔离 Windows 虚拟机/Sandbox：未真实执行商店、网络、驱动、服务等修改，未验收 UAC 成功/取消与恢复流程。
-- GitHub 官方设备授权已完成。相同凭据访问环境中 API 确认账号 dizzyC、仓库 PUBLIC、默认分支 main；目前仅有 v0.2.0 Release。普通沙箱凭据访问仍返回 401，不能据此否定已登录；尚未推送或发布新版本。
-- EXE 的首页到商店只读诊断交互已验收；最新 EXE 的完整导出向导、窗口缩放、扫描取消与关闭无残留仍未逐项完成真实交互验收。对应源码 Qt 自动检查通过，两者不混称。界面工具检测到用户输入后暂停交互，未强行关闭用户正在操作的窗口。
-- 扩展计划的其他实现缺口沿用 [此前开发记录](verification-v0.3.md) 中的未完成项；厂商驱动下载安装、完整签名验证等没有完成。
-
-不得将当前构建声称为已通过全部修复验收。不上传真实诊断输出或验证截图；发行说明必须披露以上限制。用户的上传确认不等于真实修复测试结果。
-
-## 本轮门禁表
-
-| 功能 | 验证状态 | 实际检查/证据 | 允许正式发布 |
-|---|---|---|---|
-| 最新 EXE 启动与商店只读结果显示 | 真实验证通过 | 真实窗口首页→诊断→4 项结果、TLS 详情 | 此单项通过 |
-| 求助包报告/ZIP | 真实验证通过（脚本） | 真实采集、虚构问题/截图；ZIP 可读取，2 个哈希一致 | 此单项通过，最新 EXE 完整向导仍待验收 |
-| 隐私脱敏 | 自动化测试通过 | pytest；真实采集报告隐私扫描无泄漏 | 此单项通过，不承诺覆盖所有格式 |
-| L0 无系统修改 | 真实验证通过（已检查范围） | 21 项只读扫描、启动项与代理前后快照相同；未执行修复 | 此单项通过 |
-| 新增修复确认/注入/过期/篡改保护 | 自动化测试通过 | tests/test_advanced_repairs.py、test_repair_boundaries.py、test_elevation.py | 不等同于真实修复验收 |
-| UAC 成功/取消及修改后恢复 | 尚未验证 | 没有可用隔离 Windows 环境 | 否 |
-| DNS/Store/服务/驱动真实修改 | 尚未验证 | 未修改开发电脑；待可还原 Windows 10/11 测试环境 | 否 |
-| 发布内容敏感扫描 | 自动化检查通过 | 72 个文本文件无阻断项；本地验证产物被忽略 | 发布前仍需暂存差异复核 |
-| GitHub 身份 | 真实验证通过 | API 返回 dizzyC；当前版本未推送/上传 | 身份通过，发布门禁未通过 |
-
-当前没有可用的 Sandbox 可执行程序、VirtualBox/VMware 工具或 Hyper-V 管理命令；系统报告 HypervisorPresent 为 False。Windows 可选组件状态查询需要管理员权限，因此不将其标记为“确认未安装”。未启用系统功能或要求重启。后续需要用户提供可还原测试虚拟机或另行授权搭建环境。
-
-## 依据
-
-- [微软：商店错误 0x80131500 与 TLS 设置](https://support.microsoft.com/en-gb/accounts-billing/error-0x80131500-in-microsoft-store?nochrome=true)
-- [微软：Windows TLS 支持范围](https://learn.microsoft.com/en-us/windows/win32/secauthn/protocols-in-tls-ssl--schannel-ssp-)
-- [微软：检查用户包注册后恢复商店](https://learn.microsoft.com/en-us/troubleshoot/windows-client/shell-experience/troubleshooting-microsoft-store-apps-download-failure)
+For exact current English runs, see [verification-report.md](verification-report.md). The original Chinese documentation remains in the separate Chinese checkout/branch; this historical summary intentionally contains no personal machine report, attachment or build artifact.

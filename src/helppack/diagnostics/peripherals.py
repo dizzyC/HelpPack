@@ -5,6 +5,9 @@ import platform
 import uuid
 from ctypes import wintypes
 
+from helppack.english import text as msg
+
+from ..english import label as display_label
 from .investigation import Finding, Investigation, query, readable, rows
 from .runner import CommandRunner
 
@@ -19,7 +22,7 @@ class Guid(ctypes.Structure):
 
 def default_volume() -> dict:
     if platform.system() != "Windows":
-        raise NotImplementedError("仅 Windows 支持原生默认端点音量读取")
+        raise NotImplementedError(msg('仅 Windows 支持原生默认端点音量读取'))
     ole = ctypes.WinDLL("ole32", use_last_error=True)
     ole.CoInitializeEx.argtypes = [ctypes.c_void_p, wintypes.DWORD]
     ole.CoInitializeEx.restype = ctypes.c_long
@@ -29,7 +32,7 @@ def default_volume() -> dict:
     pointers = []
     def check(code):
         if code < 0:
-            raise OSError(f"音频接口不可用（HRESULT {code & 0xFFFFFFFF:X}）")
+            raise OSError(msg('音频接口不可用（HRESULT {0:X}）', code & 4294967295))
     def call(pointer, slot, types, *args):
         table = ctypes.cast(pointer, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))).contents
         return ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_void_p, *types)(table[slot])(pointer, *args)
@@ -48,7 +51,7 @@ def default_volume() -> dict:
         level, mute = ctypes.c_float(), wintypes.BOOL()
         check(call(volume, 9, [ctypes.POINTER(ctypes.c_float)], ctypes.byref(level)))
         check(call(volume, 15, [ctypes.POINTER(wintypes.BOOL)], ctypes.byref(mute)))
-        return {"默认多媒体端点音量百分比": round(level.value * 100, 1), "静音": bool(mute.value)}
+        return {msg('默认多媒体端点音量百分比'): round(level.value * 100, 1), msg('静音'): bool(mute.value)}
     finally:
         for pointer in reversed(pointers):
             call(pointer, 2, [])
@@ -83,12 +86,12 @@ def classic_bluetooth() -> list[dict]:
     if not handle:
         error = ctypes.get_last_error()
         if error not in (0, 259):
-            raise OSError("经典蓝牙接口不可用")
+            raise OSError(msg('经典蓝牙接口不可用'))
         return []
     found = []
     try:
         for _ in range(100):
-            found.append({"名称": info.name, "已配对": bool(info.authenticated), "已记住": bool(info.remembered), "当前连接标志": bool(info.connected)})
+            found.append({msg('名称'): info.name, msg('已配对'): bool(info.authenticated), msg('已记住'): bool(info.remembered), msg('当前连接标志'): bool(info.connected)})
             if not dll.BluetoothFindNextDevice(handle, ctypes.byref(info)):
                 break
     finally:
@@ -98,42 +101,42 @@ def classic_bluetooth() -> list[dict]:
 
 def inspect_peripherals(kind: str, cancel, progress, runner=None) -> Investigation:
     if kind not in {"声音", "蓝牙", "打印机"}:
-        raise ValueError("外设类型无效")
+        raise ValueError(msg('外设类型无效'))
     runner = runner or CommandRunner()
-    result = Investigation(kind + "专项检查")
+    result = Investigation(display_label(kind) + " · " + msg('专项检查'))
     service_names = {"声音": "Audiosrv,AudioEndpointBuilder", "蓝牙": "bthserv", "打印机": "Spooler"}[kind]
-    queries = [("相关服务", f"Get-Service -Name {service_names} | Select-Object Name,@{{n='State';e={{[string]$_.Status}}}}|ConvertTo-Json -Compress")]
+    queries = [(msg('相关服务'), f"Get-Service -Name {service_names} | Select-Object Name,@{{n='State';e={{[string]$_.Status}}}}|ConvertTo-Json -Compress")]
     if kind == "蓝牙":
-        queries.append(("蓝牙适配器/设备", "Get-PnpDevice -Class Bluetooth -PresentOnly | Select-Object FriendlyName,Class,Status | ConvertTo-Json -Compress"))
+        queries.append((msg('蓝牙适配器/设备'), "Get-PnpDevice -Class Bluetooth -PresentOnly | Select-Object FriendlyName,Class,Status | ConvertTo-Json -Compress"))
         try:
             values = classic_bluetooth()
-            result.findings.append(Finding("经典蓝牙配对/连接", "已读取" if values else "未获得设备", str(values)))
+            result.findings.append(Finding(msg('经典蓝牙配对/连接'), "已读取" if values else "未获得设备", str(values)))
         except (OSError, NotImplementedError):
-            result.findings.append(Finding("经典蓝牙配对/连接", "当前接口不支持", "不能根据 PnP 存在推断已配对/连接。"))
-        result.recommendations.append("经典蓝牙连接标志不保证音频配置文件已连接；此原生接口不覆盖所有 BLE 设备，BLE 配对状态无法验证时需查看 Windows 设置。")
+            result.findings.append(Finding(msg('经典蓝牙配对/连接'), "当前接口不支持", msg('不能根据 PnP 存在推断已配对/连接。')))
+        result.recommendations.append(msg('经典蓝牙连接标志不保证音频配置文件已连接；此原生接口不覆盖所有 BLE 设备，BLE 配对状态无法验证时需查看 Windows 设置。'))
     elif kind == "声音":
         try:
-            result.findings.append(Finding("默认输出静音/音量", "已读取", readable(default_volume())))
+            result.findings.append(Finding(msg('默认输出静音/音量'), "已读取", readable(default_volume())))
         except (OSError, NotImplementedError):
-            result.findings.append(Finding("默认输出静音/音量", "无法验证", "没有可读的默认端点或接口权限受限。"))
-        queries.append(("音频设备状态", "Get-PnpDevice -Class AudioEndpoint -PresentOnly | Select-Object FriendlyName,Status | ConvertTo-Json -Compress"))
-        result.recommendations.append("输出设备与默认设备由界面列出；试听只在主动点击后播放低音量两秒声音，不调整系统音量或默认设备。")
+            result.findings.append(Finding(msg('默认输出静音/音量'), "无法验证", msg('没有可读的默认端点或接口权限受限。')))
+        queries.append((msg('音频设备状态'), "Get-PnpDevice -Class AudioEndpoint -PresentOnly | Select-Object FriendlyName,Status | ConvertTo-Json -Compress"))
+        result.recommendations.append(msg('输出设备与默认设备由界面列出；试听只在主动点击后播放低音量两秒声音，不调整系统音量或默认设备。'))
     else:
-        queries.append(("打印机默认/离线/暂停", "Get-CimInstance Win32_Printer | Select-Object Name,Default,WorkOffline,PrinterStatus,PrinterState | ConvertTo-Json -Compress"))
-        queries.append(("打印队列（不读取文档名或所有者）", "@(Get-Printer | ForEach-Object {$p=$_;Get-PrintJob -PrinterName $p.Name -ErrorAction Stop | Select-Object -First 30 @{n='Printer';e={$p.Name}},Id,JobStatus,TotalPages,PagesPrinted})|ConvertTo-Json -Compress"))
-        result.recommendations.append("PrinterState 的暂停位为 1；队列/脱机标志是系统快照，未检测到队列不证明实体打印成功。测试页会消耗纸张/墨粉，需选择真实打印机并单独确认。")
+        queries.append((msg('打印机默认/离线/暂停'), "Get-CimInstance Win32_Printer | Select-Object Name,Default,WorkOffline,PrinterStatus,PrinterState | ConvertTo-Json -Compress"))
+        queries.append((msg('打印队列（不读取文档名或所有者）'), "@(Get-Printer | ForEach-Object {$p=$_;Get-PrintJob -PrinterName $p.Name -ErrorAction Stop | Select-Object -First 30 @{n='Printer';e={$p.Name}},Id,JobStatus,TotalPages,PagesPrinted})|ConvertTo-Json -Compress"))
+        result.recommendations.append(msg('PrinterState 的暂停位为 1；队列/脱机标志是系统快照，未检测到队列不证明实体打印成功。测试页会消耗纸张/墨粉，需选择真实打印机并单独确认。'))
     for index, (label, script) in enumerate(queries):
         if cancel.is_set():
             raise InterruptedError("已取消")
         progress(20 + index * 25, label)
         try:
             value = rows(query(runner, script, 25))
-            if label == "打印机默认/离线/暂停":
+            if label == msg('打印机默认/离线/暂停'):
                 for printer in value:
                     state = printer.get("PrinterState")
-                    printer["暂停标志"] = bool(state & 1) if isinstance(state, int) else "无法读取"
+                    printer[msg('暂停标志')] = bool(state & 1) if isinstance(state, int) else "无法读取"
             result.findings.append(Finding(label, "已读取" if value else "未检测到记录", readable(value)))
         except (OSError, ValueError, TimeoutError) as exc:
             result.findings.append(Finding(label, "权限不足" if isinstance(exc, PermissionError) else "无法读取", type(exc).__name__))
-    progress(100, "外设检查结束")
+    progress(100, msg('外设检查结束'))
     return result

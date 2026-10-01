@@ -6,6 +6,8 @@ from datetime import datetime
 
 import psutil
 
+from helppack.english import text as msg
+
 
 class ResourceSampler:
     def __init__(self):
@@ -58,9 +60,9 @@ class MonitorBuffer:
 
     def mark_incident(self) -> dict:
         if not self.samples:
-            raise ValueError("尚未取得采样，稍后再标记")
+            raise ValueError(msg('尚未取得采样，稍后再标记'))
         if len(self.incidents) >= 50:
-            raise ValueError("本次已标记 50 个片段，请停止并保存")
+            raise ValueError(msg('本次已标记 50 个片段，请停止并保存'))
         elapsed = self.samples[-1]["elapsed"]
         incident = {"at": elapsed, "time": self.samples[-1]["time"], "complete": False,
                     "samples": [s.copy() for s in self.samples if s["elapsed"] >= elapsed - 60]}
@@ -75,4 +77,4 @@ class MonitorBuffer:
 
         from ..redaction import redact_text
         value = {"recent_samples": list(self.samples), "incidents": self.incidents, "stopped": self.stopped}
-        return redact_text("## 间歇性故障监测\n\n仅含资源计数，不含进程/网络目标。首次速率是采样基线；null 表示该计数无法读取，不是零活动。前后片段不证明故障原因；停止时未采满后 30 秒的片段保留 complete=false 状态。\n\n```json\n" + json.dumps(value, ensure_ascii=False, indent=2) + "\n```")
+        return redact_text(msg('## 间歇性故障监测\n\n仅含资源计数，不含进程/网络目标。首次速率是采样基线；null 表示该计数无法读取，不是零活动。前后片段不证明故障原因；停止时未采满后 30 秒的片段保留 complete=false 状态。\n\n```json\n') + json.dumps(value, ensure_ascii=False, indent=2) + "\n```")

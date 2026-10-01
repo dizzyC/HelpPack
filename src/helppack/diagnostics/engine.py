@@ -5,6 +5,8 @@ from collections.abc import Callable, Iterable
 from datetime import datetime
 from typing import Protocol
 
+from helppack.english import text as msg
+
 from .models import (
     DiagnosticResult,
     DiagnosticStatus,
@@ -36,11 +38,11 @@ class ScanContext:
 
     def ensure_not_cancelled(self) -> None:
         if self.cancel_event.is_set():
-            raise ScanCancelled("用户已取消扫描")
+            raise ScanCancelled(msg('用户已取消扫描'))
 
     def wait(self, seconds: float) -> None:
         if self.cancel_event.wait(seconds):
-            raise ScanCancelled("用户已取消扫描")
+            raise ScanCancelled(msg('用户已取消扫描'))
 
 
 class DiagnosticEngine:
@@ -75,14 +77,14 @@ class DiagnosticEngine:
                 cancelled = True
                 break
             except PermissionError:
-                results.append(_failure_result(check, DiagnosticStatus.PERMISSION_DENIED, "当前权限不足，未能完成此项检查。"))
+                results.append(_failure_result(check, DiagnosticStatus.PERMISSION_DENIED, msg('当前权限不足，未能完成此项检查。')))
             except TimeoutError:
-                results.append(_failure_result(check, DiagnosticStatus.UNKNOWN, "检查超时，无法判断当前状态。"))
+                results.append(_failure_result(check, DiagnosticStatus.UNKNOWN, msg('检查超时，无法判断当前状态。')))
             except (NotImplementedError, OSError) as exc:
-                results.append(_failure_result(check, DiagnosticStatus.UNSUPPORTED, f"当前系统不支持此项检查：{type(exc).__name__}"))
+                results.append(_failure_result(check, DiagnosticStatus.UNSUPPORTED, msg('当前系统不支持此项检查：{0}', type(exc).__name__)))
             except Exception as exc:  # noqa: BLE001 - a broken checker must not abort other checks
-                results.append(_failure_result(check, DiagnosticStatus.UNKNOWN, f"检查失败，但其他项目将继续：{type(exc).__name__}"))
-        callback(100, "扫描已取消" if cancelled else "只读扫描完成")
+                results.append(_failure_result(check, DiagnosticStatus.UNKNOWN, msg('检查失败，但其他项目将继续：{0}', type(exc).__name__)))
+        callback(100, msg('扫描已取消') if cancelled else msg('只读扫描完成'))
         finished = datetime.now().astimezone()
         return ScanSummary(
             category=category,
@@ -100,10 +102,10 @@ def _failure_result(check: DiagnosticCheck, status: DiagnosticStatus, explanatio
         display_name=check.display_name,
         status=status,
         severity=Severity.INFO,
-        evidence=[Evidence("检查状态", explanation)],
+        evidence=[Evidence(msg('检查状态'), explanation)],
         explanation=explanation,
-        confidence="高（仅针对检查是否完成）",
-        recommendations=["可稍后重试，或将该状态连同求助包交给技术人员。"],
+        confidence=msg('高（仅针对检查是否完成）'),
+        recommendations=[msg('可稍后重试，或将该状态连同求助包交给技术人员。')],
         safety_level=SafetyLevel.L0,
         redacted_raw=explanation,
     )

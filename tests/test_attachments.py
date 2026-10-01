@@ -8,7 +8,7 @@ from helppack.attachments import AttachmentError, add_attachments
 def test_rejects_unsupported_screenshot(tmp_path: Path) -> None:
     file = tmp_path / "screen.gif"
     file.write_bytes(b"gif")
-    with pytest.raises(AttachmentError, match="仅支持 PNG"):
+    with pytest.raises(AttachmentError, match='Only PNG'):
         add_attachments([], [file])
 
 
@@ -18,7 +18,7 @@ def test_rejects_more_than_five_screenshots(tmp_path: Path) -> None:
         file = tmp_path / f"{index}.png"
         file.write_bytes(b"png")
         files.append(file)
-    with pytest.raises(AttachmentError, match="最多只能添加 5 张"):
+    with pytest.raises(AttachmentError, match='up to 5 screenshots'):
         add_attachments([], files)
 
 

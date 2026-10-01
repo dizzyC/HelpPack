@@ -17,6 +17,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
 
+from helppack.english import text as msg
+
 from ..redaction import redact_text
 from .models import (
     RepairSuggestion,
@@ -74,11 +76,11 @@ class RepairHandler(Protocol):
 class WindowsRegistryBackend:
     def _key(self, key_path: str, access: int):
         if platform.system() != "Windows":
-            raise NotImplementedError("仅支持 Windows")
+            raise NotImplementedError(msg('仅支持 Windows'))
         import winreg
 
         if key_path not in ALLOWED_STARTUP_KEYS | {PROXY_KEY}:
-            raise InvalidRepairTarget("注册表路径不在允许列表")
+            raise InvalidRepairTarget(msg('注册表路径不在允许列表'))
         return winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, access)
 
     def read_value(self, key_path: str, value_name: str) -> tuple[bool, Any, int]:
@@ -161,10 +163,10 @@ class BackupStore:
 
     def load(self, backup_id: str) -> dict[str, Any]:
         if not backup_id or any(char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for char in backup_id):
-            raise InvalidRepairTarget("备份编号无效")
+            raise InvalidRepairTarget(msg('备份编号无效'))
         path = (self.root / f"{backup_id}.json").resolve()
         if path.parent != self.root.resolve():
-            raise InvalidRepairTarget("备份路径越界")
+            raise InvalidRepairTarget(msg('备份路径越界'))
         envelope = json.loads(path.read_text(encoding="utf-8"))
         if envelope.get("format") == "dpapi-v1":
             raw = _dpapi(base64.b64decode(envelope["payload"]), protect=False)
@@ -188,12 +190,12 @@ class RegistryRepairHandler:
     def validate(self, target: dict[str, str]) -> None:
         if self.action_id == "disable_hkcu_startup":
             if target.get("key_path") not in ALLOWED_STARTUP_KEYS:
-                raise InvalidRepairTarget("启动项路径不受支持")
+                raise InvalidRepairTarget(msg('启动项路径不受支持'))
             name = target.get("value_name", "")
             if not name or len(name) > 260 or any(char in name for char in "\r\n\x00\\/"):
-                raise InvalidRepairTarget("启动项名称无效")
+                raise InvalidRepairTarget(msg('启动项名称无效'))
         elif target != {"key_path": PROXY_KEY}:
-            raise InvalidRepairTarget("代理对象不受支持")
+            raise InvalidRepairTarget(msg('代理对象不受支持'))
 
     def snapshot(self, target: dict[str, str]) -> dict[str, Any]:
         targets = [(target["key_path"], target["value_name"])] if self.action_id == "disable_hkcu_startup" else [(PROXY_KEY, name) for name in PROXY_VALUES]
@@ -206,41 +208,41 @@ class RegistryRepairHandler:
     def execute(self, target: dict[str, str]) -> str:
         if self.action_id == "disable_hkcu_startup":
             self.backend.delete_value(target["key_path"], target["value_name"])
-            return "已禁用所选当前用户启动项。"
+            return msg('已禁用所选当前用户启动项。')
         import winreg
 
         self.backend.set_value(PROXY_KEY, "ProxyEnable", 0, winreg.REG_DWORD)
         self.backend.delete_value(PROXY_KEY, "ProxyServer")
         self.backend.delete_value(PROXY_KEY, "AutoConfigURL")
-        return "已重置当前用户代理和 PAC。"
+        return msg('已重置当前用户代理和 PAC。')
 
     def verify(self, target: dict[str, str]) -> tuple[bool, str]:
         if self.action_id == "disable_hkcu_startup":
             exists, _value, _kind = self.backend.read_value(target["key_path"], target["value_name"])
-            return not exists, "启动项已不存在" if not exists else "启动项仍然存在"
+            return not exists, msg('启动项已不存在') if not exists else msg('启动项仍然存在')
         enabled_exists, enabled_value, _kind = self.backend.read_value(PROXY_KEY, "ProxyEnable")
         server_exists, _server, _kind = self.backend.read_value(PROXY_KEY, "ProxyServer")
         pac_exists, _pac, _kind = self.backend.read_value(PROXY_KEY, "AutoConfigURL")
         ok = (not enabled_exists or not bool(enabled_value)) and not server_exists and not pac_exists
-        return ok, "当前用户代理已关闭" if ok else "代理配置仍然存在"
+        return ok, msg('当前用户代理已关闭') if ok else msg('代理配置仍然存在')
 
     def rollback(self, snapshot: dict[str, Any]) -> str:
         values = snapshot.get("values", [])
         if not isinstance(values, list) or not values:
-            raise InvalidRepairTarget("备份内容无效")
+            raise InvalidRepairTarget(msg('备份内容无效'))
         for item in values:
             if self.action_id == "disable_hkcu_startup":
                 self.validate({"key_path": str(item["key_path"]), "value_name": str(item["value_name"])})
                 if len(values) != 1:
-                    raise InvalidRepairTarget("启动项备份必须只有一个目标")
+                    raise InvalidRepairTarget(msg('启动项备份必须只有一个目标'))
             elif item["key_path"] != PROXY_KEY or item["value_name"] not in PROXY_VALUES:
-                raise InvalidRepairTarget("备份超出代理恢复范围")
+                raise InvalidRepairTarget(msg('备份超出代理恢复范围'))
         for item in values:
             if item["exists"]:
                 self.backend.set_value(str(item["key_path"]), str(item["value_name"]), item["value"], int(item["value_type"]))
             else:
                 self.backend.delete_value(str(item["key_path"]), str(item["value_name"]))
-        return "已按备份恢复原配置。"
+        return msg('已按备份恢复原配置。')
 
 
 class CommandRepairHandler:
@@ -264,14 +266,14 @@ class CommandRepairHandler:
             value = result.json_value()
             self.restart_required = bool(value.get("RebootRequired")) if isinstance(value, dict) else True
         output = (result.stdout or result.stderr).strip()
-        return redact_text(output[-4000:] if output else "系统命令已完成。")
+        return redact_text(output[-4000:] if output else msg('系统命令已完成。'))
 
     def verify(self, target: dict[str, str]) -> tuple[bool | None, str]:
-        return self._verifier(target) if self._verifier else (None, "命令已完成；尚不能确认原问题是否解决。")
+        return self._verifier(target) if self._verifier else (None, msg('命令已完成；尚不能确认原问题是否解决。'))
 
     def rollback(self, snapshot: dict[str, Any]) -> str:
         if self._rollbacker is None:
-            raise InvalidRepairTarget("此操作不支持自动回滚")
+            raise InvalidRepairTarget(msg('此操作不支持自动回滚'))
         return self._rollbacker(snapshot)
 
 
@@ -282,24 +284,24 @@ class OfficialUrlHandler:
         from urllib.parse import urlparse
 
         if set(target) != {"url"}:
-            raise InvalidRepairTarget("厂商支持目标无效")
+            raise InvalidRepairTarget(msg('厂商支持目标无效'))
         parsed = urlparse(target["url"])
         if parsed.scheme != "https" or parsed.hostname not in OFFICIAL_DRIVER_HOSTS or parsed.username or parsed.password:
-            raise InvalidRepairTarget("只允许打开白名单中的官方 HTTPS 驱动网站")
+            raise InvalidRepairTarget(msg('只允许打开白名单中的官方 HTTPS 驱动网站'))
 
     def snapshot(self, target: dict[str, str]) -> None:
         return None
 
     def execute(self, target: dict[str, str]) -> str:
         if not webbrowser.open(target["url"], new=2):
-            raise RepairExecutionError("系统没有接受打开浏览器的请求")
-        return "已在默认浏览器中打开官方驱动支持页面。"
+            raise RepairExecutionError(msg('系统没有接受打开浏览器的请求'))
+        return msg('已在默认浏览器中打开官方驱动支持页面。')
 
     def verify(self, target: dict[str, str]) -> tuple[bool, str]:
-        return True, "已把官方 HTTPS 地址交给默认浏览器"
+        return True, msg('已把官方 HTTPS 地址交给默认浏览器')
 
     def rollback(self, snapshot: dict[str, Any]) -> str:
-        raise InvalidRepairTarget("打开网页无需回滚")
+        raise InvalidRepairTarget(msg('打开网页无需回滚'))
 
 
 class RepairCoordinator:
@@ -321,10 +323,10 @@ class RepairCoordinator:
         if suggestion.action_id == "store_reset_data":
             suggestion.confirmation_phrase = "重置"
         if suggestion.safety_level == SafetyLevel.L0:
-            raise InvalidRepairTarget("只读检查不是修复操作")
+            raise InvalidRepairTarget(msg('只读检查不是修复操作'))
         handler = self.handlers.get(suggestion.action_id)
         if handler is None:
-            raise InvalidRepairTarget("操作不在允许列表")
+            raise InvalidRepairTarget(msg('操作不在允许列表'))
         handler.validate(suggestion.target)
         prepared = PreparedRepair(
             confirmation_id=uuid.uuid4().hex,
@@ -353,19 +355,19 @@ class RepairCoordinator:
     def execute(self, prepared: PreparedRepair, *, user_confirmed: bool, second_confirmation: str | bool = False, recheck=None) -> RepairOutcome:
         current = self._prepared.pop(prepared.confirmation_id, None)
         if current is None or current != prepared or current.target_digest != _target_digest(prepared.action_id, prepared.target):
-            raise ConfirmationRequired("确认已失效或对象发生变化")
+            raise ConfirmationRequired(msg('确认已失效或对象发生变化'))
         if datetime.now(UTC) > datetime.fromisoformat(current.expires_at):
-            raise ConfirmationRequired("确认已过期，请重新查看操作内容")
+            raise ConfirmationRequired(msg('确认已过期，请重新查看操作内容'))
         if not user_confirmed:
-            self._log(f"用户拒绝修复：{prepared.display_name}")
-            return RepairOutcome(False, "用户已取消，没有执行任何修改。", action_id=prepared.action_id)
+            self._log(msg('用户拒绝修复：{0}', prepared.display_name))
+            return RepairOutcome(False, msg('用户已取消，没有执行任何修改。'), action_id=prepared.action_id)
         if current.requires_second_confirmation:
             expected = current.confirmation_phrase
             confirmed = second_confirmation is True if not expected else second_confirmation == expected
             if not confirmed:
-                raise ConfirmationRequired("高风险操作需要完成第二次确认")
+                raise ConfirmationRequired(msg('高风险操作需要完成第二次确认'))
         if prepared.requires_admin and not is_admin():
-            raise PermissionError("此操作需要管理员权限")
+            raise PermissionError(msg('此操作需要管理员权限'))
 
         handler = self.handlers[prepared.action_id]
         handler.validate(prepared.target)
@@ -374,39 +376,39 @@ class RepairCoordinator:
         if snapshot is not None:
             payload = {"version": 2, "action_id": prepared.action_id, "target": prepared.target, "created_at": datetime.now().astimezone().isoformat(timespec="seconds"), "rollback_capability": prepared.rollback_capability.value, "snapshot": snapshot}
             backup_id = self.backups.save(payload, sensitive=prepared.action_id in {"reset_user_proxy", "reset_dns_to_dhcp", "renew_dhcp"})
-        self._record_operation(prepared.action_id, "执行中", backup_id)
+        self._record_operation(prepared.action_id, msg('执行中'), backup_id)
         try:
             message = handler.execute(prepared.target)
         except Exception:
-            self._record_operation(prepared.action_id, "执行未完整完成；需要复查", backup_id)
+            self._record_operation(prepared.action_id, msg('执行未完整完成；需要复查'), backup_id)
             raise
         try:
             verified, verification = handler.verify(prepared.target)
         except Exception as exc:  # noqa: BLE001 - preserve evidence of completed mutation
-            verified, verification = None, f"操作已执行，复查不可用：{type(exc).__name__}"
-        self._record_operation(prepared.action_id, "命令完成", backup_id, verification)
-        self._log(f"已执行：{prepared.display_name}；验证：{verification}")
+            verified, verification = None, msg('操作已执行，复查不可用：{0}', type(exc).__name__)
+        self._record_operation(prepared.action_id, msg('命令完成'), backup_id, verification)
+        self._log(msg('已执行：{0}；验证：{1}', prepared.display_name, verification))
         recheck_completed, recheck_summary = True, verification
         if recheck is not None:
             try:
                 recheck_summary = str(recheck())
             except Exception as exc:  # noqa: BLE001
-                recheck_summary, recheck_completed = f"复查失败：{type(exc).__name__}", False
-        state = "目标状态复查通过；请确认原问题是否解决。" if verified is True else ("操作已完成，但复查未通过。" if verified is False else "操作已完成，原问题是否解决尚未验证。")
+                recheck_summary, recheck_completed = msg('复查失败：{0}', type(exc).__name__), False
+        state = msg('目标状态复查通过；请确认原问题是否解决。') if verified is True else (msg('操作已完成，但复查未通过。') if verified is False else msg('操作已完成，原问题是否解决尚未验证。'))
         restart_required = prepared.restart_requirement == RestartRequirement.SYSTEM or bool(getattr(handler, "restart_required", False))
         return RepairOutcome(True, f"{message}\n{state}", backup_id, recheck_completed, redact_text(recheck_summary), verified, restart_required, prepared.action_id)
 
     def rollback(self, backup_id: str, *, user_confirmed: bool) -> RepairOutcome:
         if not user_confirmed:
-            return RepairOutcome(False, "用户已取消，没有执行回滚。")
+            return RepairOutcome(False, msg('用户已取消，没有执行回滚。'))
         payload = self.backups.load(backup_id)
         handler = self.handlers.get(str(payload.get("action_id", "")))
         if handler is None:
-            raise InvalidRepairTarget("备份操作类型不受支持")
+            raise InvalidRepairTarget(msg('备份操作类型不受支持'))
         if payload.get("rollback_capability") == RollbackCapability.NONE.value:
-            raise InvalidRepairTarget("此操作没有自动回滚能力")
+            raise InvalidRepairTarget(msg('此操作没有自动回滚能力'))
         message = handler.rollback(dict(payload.get("snapshot", payload)))
-        self._log(f"已回滚备份：{backup_id}")
+        self._log(msg('已回滚备份：{0}', backup_id))
         return RepairOutcome(True, message, backup_id=backup_id, action_id=str(payload.get("action_id", "")))
 
     def _log(self, message: str) -> None:
@@ -453,47 +455,47 @@ def build_default_handlers(backend: RegistryBackend, runner: CommandRunner) -> d
 
 def _expect_empty(target: dict[str, str]) -> None:
     if target:
-        raise InvalidRepairTarget("此操作不接受目标参数")
+        raise InvalidRepairTarget(msg('此操作不接受目标参数'))
 
 
 def _expect_store_family(target: dict[str, str]) -> None:
     if target != {"package_family": "Microsoft.WindowsStore_8wekyb3d8bbwe"}:
-        raise InvalidRepairTarget("只允许修复 Microsoft Store 当前用户包")
+        raise InvalidRepairTarget(msg('只允许修复 Microsoft Store 当前用户包'))
 
 
 def _validate_service(target: dict[str, str]) -> None:
     if set(target) != {"service_name"} or target["service_name"] not in ALLOWED_SERVICES:
-        raise InvalidRepairTarget("服务不在允许列表")
+        raise InvalidRepairTarget(msg('服务不在允许列表'))
 
 
 def _validate_interface(target: dict[str, str]) -> None:
     value = target.get("interface_alias", "")
     if set(target) != {"interface_alias"} or not value or len(value) > 128 or any(ch in value for ch in "\r\n\x00*?/"):
-        raise InvalidRepairTarget("网络接口名称无效")
+        raise InvalidRepairTarget(msg('网络接口名称无效'))
 
 
 def _validate_interface_index(target: dict[str, str]) -> None:
     if set(target) != {"interface_index"} or not target["interface_index"].isdigit() or not 1 <= int(target["interface_index"]) <= 65535:
-        raise InvalidRepairTarget("网络接口编号无效")
+        raise InvalidRepairTarget(msg('网络接口编号无效'))
 
 
 def _validate_safe_tcpip(target: dict[str, str]) -> None:
     if target != {"dhcp_only": "true", "complex_adapters": "false"}:
-        raise InvalidRepairTarget("检测到静态地址、VPN、网桥或虚拟交换机，禁止自动重置 TCP/IP")
+        raise InvalidRepairTarget(msg('检测到静态地址、VPN、网桥或虚拟交换机，禁止自动重置 TCP/IP'))
 
 
 def _validate_update_id(target: dict[str, str]) -> None:
     if set(target) != {"update_id"} or not GUID_RE.fullmatch(target["update_id"]):
-        raise InvalidRepairTarget("Windows Update 驱动编号无效")
+        raise InvalidRepairTarget(msg('Windows Update 驱动编号无效'))
 
 
 def _validate_inf(target: dict[str, str]) -> None:
     if set(target) != {"inf_path"}:
-        raise InvalidRepairTarget("驱动目标无效")
+        raise InvalidRepairTarget(msg('驱动目标无效'))
     path = Path(target["inf_path"])
     if not path.is_absolute() or path.suffix.lower() != ".inf" or not path.is_file():
-        raise InvalidRepairTarget("必须选择存在的本地 INF 文件")
-    raise InvalidRepairTarget("INF 安装尚未通过签名、硬件匹配与恢复验证，当前不可执行")
+        raise InvalidRepairTarget(msg('必须选择存在的本地 INF 文件'))
+    raise InvalidRepairTarget(msg('INF 安装尚未通过签名、硬件匹配与恢复验证，当前不可执行'))
 
 
 def _powershell_args(script: str) -> list[str]:
@@ -504,14 +506,14 @@ def _powershell_args(script: str) -> list[str]:
 
 def _ensure_command_success(result: CommandResult) -> None:
     if result.timed_out:
-        raise RepairExecutionError("操作超时；未强制结束系统修复进程，请稍后重新检查状态")
+        raise RepairExecutionError(msg('操作超时；未强制结束系统修复进程，请稍后重新检查状态'))
     if result.permission_denied:
-        raise PermissionError("系统拒绝了操作权限")
+        raise PermissionError(msg('系统拒绝了操作权限'))
     if result.unsupported:
-        raise RepairExecutionError("当前 Windows 版本不支持此操作")
+        raise RepairExecutionError(msg('当前 Windows 版本不支持此操作'))
     if result.returncode != 0:
         detail = redact_text((result.stderr or result.stdout).strip())[-1200:]
-        raise RepairExecutionError(f"系统操作失败（退出码 {result.returncode}）：{detail or '没有返回详细信息'}")
+        raise RepairExecutionError(msg('系统操作失败（退出码 {0}）：{1}', result.returncode, detail or msg('没有返回详细信息')))
 
 
 def _verify_dns(_target: dict[str, str]) -> tuple[bool, str]:
@@ -524,18 +526,18 @@ def _verify_dns(_target: dict[str, str]) -> tuple[bool, str]:
             succeeded += 1
         except OSError:
             pass
-    return succeeded == 2, f"DNS 复查：{succeeded}/2 个测试域名解析成功"
+    return succeeded == 2, msg('DNS 复查：{0}/2 个测试域名解析成功', succeeded)
 
 
 def _verify_store(_target: dict[str, str], runner: CommandRunner) -> tuple[bool | None, str]:
     result = runner.run(_powershell_args("if(Get-AppxPackage -Name Microsoft.WindowsStore){exit 0}else{exit 2}"), timeout=30)
-    return (None, "Microsoft Store 包存在；请实际打开商店确认能否正常使用") if result.returncode == 0 else (False, "无法确认 Microsoft Store 包存在")
+    return (None, msg('Microsoft Store 包存在；请实际打开商店确认能否正常使用')) if result.returncode == 0 else (False, msg('无法确认 Microsoft Store 包存在'))
 
 
 def _verify_service(runner: CommandRunner, target: dict[str, str]) -> tuple[bool, str]:
     result = runner.run(["sc.exe", "query", target["service_name"]], timeout=20)
     ok = result.returncode == 0 and "RUNNING" in result.stdout.upper()
-    return ok, "服务正在运行" if ok else "服务仍未运行或状态无法读取"
+    return ok, msg('服务正在运行') if ok else msg('服务仍未运行或状态无法读取')
 
 
 def _snapshot_dns(runner: CommandRunner, target: dict[str, str]) -> dict[str, Any] | None:
@@ -545,7 +547,7 @@ def _snapshot_dns(runner: CommandRunner, target: dict[str, str]) -> dict[str, An
             f"Get-NetIPConfiguration -InterfaceAlias '{alias}' | Select-Object InterfaceAlias,InterfaceIndex,IPv4Address,IPv4DefaultGateway,DNSServer | ConvertTo-Json -Depth 6 -Compress", timeout=30)
         _ensure_command_success(result)
         if not result.stdout.strip():
-            raise RepairExecutionError("无法备份接口状态，已取消续租")
+            raise RepairExecutionError(msg('无法备份接口状态，已取消续租'))
         return {"interface_alias": target["interface_alias"], "configuration": result.json_value()}
     index = int(target["interface_index"])
     script = (
@@ -561,7 +563,7 @@ def _snapshot_dns(runner: CommandRunner, target: dict[str, str]) -> dict[str, An
     try:
         return {"interface_index": index, "dns": json.loads(result.stdout.lstrip("\ufeff"))}
     except (ValueError, TypeError) as exc:
-        raise RepairExecutionError("无法保存原 DNS 配置，已取消修改") from exc
+        raise RepairExecutionError(msg('无法保存原 DNS 配置，已取消修改')) from exc
 
 
 def _restore_dns(runner: CommandRunner, snapshot: dict[str, Any]) -> str:
@@ -576,9 +578,9 @@ def _restore_dns(runner: CommandRunner, snapshot: dict[str, Any]) -> str:
             continue
         guid = str(row.get("InterfaceGuid", "")).strip("{}")
         if not GUID_RE.fullmatch(guid):
-            raise InvalidRepairTarget("备份缺少有效网卡标识")
+            raise InvalidRepairTarget(msg('备份缺少有效网卡标识'))
         family_name = "IPv4" if family == 2 else "IPv6"
-        prefix = f"$a=Get-NetAdapter -InterfaceIndex {index} -ErrorAction Stop;if(([guid]$a.InterfaceGuid).ToString() -ne '{guid}'){{throw '网卡已变化'}};"
+        prefix = f"$a=Get-NetAdapter -InterfaceIndex {index} -ErrorAction Stop;if(([guid]$a.InterfaceGuid).ToString() -ne '{guid}'){{throw 'Network adapter changed'}};"
         prefix += f"Get-DnsClientServerAddress -InterfaceIndex {index} -AddressFamily {family_name} -ErrorAction Stop | "
         if servers and not row.get("Automatic", False):
             quoted = ",".join("'" + item.replace("'", "''") + "'" for item in servers)
@@ -586,7 +588,7 @@ def _restore_dns(runner: CommandRunner, snapshot: dict[str, Any]) -> str:
         else:
             script = prefix + "Set-DnsClientServerAddress -ResetServerAddresses -ErrorAction Stop"
         _ensure_command_success(runner.run_repair(_powershell_args(script), timeout=45))
-    return "已按加密备份恢复原 DNS 服务器配置。"
+    return msg('已按加密备份恢复原 DNS 服务器配置。')
 
 
 def _wua_install_script(update_id: str) -> str:
@@ -594,28 +596,28 @@ def _wua_install_script(update_id: str) -> str:
         "$session=New-Object -ComObject Microsoft.Update.Session;"
         "$searcher=$session.CreateUpdateSearcher();"
         "$r=$searcher.Search(\"UpdateID='" + update_id + "' and IsInstalled=0\");"
-        "if($r.Updates.Count -ne 1){throw '目标驱动更新已不存在或不唯一'};"
-        "$u=$r.Updates.Item(0);if($u.Type -ne 2){throw '目标不是驱动更新'};"
-        "$hardware=[string]$u.DriverHardwareID;if([string]::IsNullOrWhiteSpace($hardware)){throw '缺少硬件匹配信息'};"
+        "if($r.Updates.Count -ne 1){throw 'Driver update is missing or not unique'};"
+        "$u=$r.Updates.Item(0);if($u.Type -ne 2){throw 'Target is not a driver update'};"
+        "$hardware=[string]$u.DriverHardwareID;if([string]::IsNullOrWhiteSpace($hardware)){throw 'Hardware matching information is missing'};"
         "$devices=@(Get-CimInstance Win32_PnPEntity -ErrorAction Stop | Where-Object {"
         "@($_.HardwareID)+@($_.CompatibleID) -contains $hardware});"
-        "if($devices.Count -ne 1){throw '无法唯一匹配设备，已取消安装'};"
+        "if($devices.Count -ne 1){throw 'Cannot uniquely match a device; installation cancelled'};"
         "$old=@(Get-CimInstance Win32_PnPSignedDriver -ErrorAction Stop | Where-Object {$_.DeviceID -eq $devices[0].DeviceID});"
         "$versions=[regex]::Matches($u.Title,'(?<![0-9.])[0-9]+(?:[.][0-9]+){1,3}(?![0-9.])');"
-        "if($versions.Count -ne 1 -or $old.Count -ne 1){throw '版本无法可靠比较，请使用 Windows Update 设置'};"
-        "if([version]$versions[0].Value -le [version]$old[0].DriverVersion){throw '禁止降级或重复安装'};"
-        "if(-not $u.EulaAccepted){throw '请先在 Windows Update 中查看并接受许可条款'};"
-        "if(-not $old[0].IsSigned -or $old[0].InfName -notmatch '^oem[0-9]+[.]inf$'){throw '当前驱动无法安全导出，请使用设备管理器'};"
+        "if($versions.Count -ne 1 -or $old.Count -ne 1){throw 'Cannot reliably compare versions; use Windows Update Settings'};"
+        "if([version]$versions[0].Value -le [version]$old[0].DriverVersion){throw 'Downgrades and duplicate installations are prohibited'};"
+        "if(-not $u.EulaAccepted){throw 'Review and accept the license terms in Windows Update first'};"
+        "if(-not $old[0].IsSigned -or $old[0].InfName -notmatch '^oem[0-9]+[.]inf$'){throw 'Cannot safely export the current driver; use Device Manager'};"
         "$backup=Join-Path $env:LOCALAPPDATA ('HelpPack\\driver-backups\\'+[guid]::NewGuid().ToString('N'));"
         "$null=New-Item -ItemType Directory -Path $backup -ErrorAction Stop;"
         "$tool=Join-Path $env:SystemRoot 'System32\\pnputil.exe';"
         "$null=& $tool /export-driver $old[0].InfName $backup;"
-        "if($LASTEXITCODE -ne 0){throw '当前驱动导出失败，已取消安装'};"
+        "if($LASTEXITCODE -ne 0){throw 'Current driver export failed; installation cancelled'};"
         "$c=New-Object -ComObject Microsoft.Update.UpdateColl;$null=$c.Add($u);"
         "$d=$session.CreateUpdateDownloader();$d.Updates=$c;$dr=$d.Download();"
-        "if($dr.ResultCode -ne 2){throw '驱动下载未完整成功'};"
+        "if($dr.ResultCode -ne 2){throw 'Driver download did not fully succeed'};"
         "$i=$session.CreateUpdateInstaller();$i.Updates=$c;$ir=$i.Install();"
-        "if($ir.ResultCode -ne 2 -or $ir.GetUpdateResult(0).ResultCode -ne 2){throw '驱动安装未完整成功'};"
+        "if($ir.ResultCode -ne 2 -or $ir.GetUpdateResult(0).ResultCode -ne 2){throw 'Driver installation did not fully succeed'};"
         "[pscustomobject]@{Result=$ir.ResultCode;RebootRequired=$ir.RebootRequired}|ConvertTo-Json -Compress"
     )
 
@@ -649,7 +651,7 @@ def _dpapi(data: bytes, *, protect: bool) -> bytes:
     else:
         ok = ctypes.windll.crypt32.CryptUnprotectData(ctypes.byref(in_blob), None, None, None, None, 0, ctypes.byref(out_blob))
     if not ok:
-        raise OSError("Windows DPAPI 操作失败")
+        raise OSError(msg('Windows DPAPI 操作失败'))
     try:
         return ctypes.string_at(out_blob.pbData, out_blob.cbData)
     finally:

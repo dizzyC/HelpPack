@@ -75,7 +75,7 @@ def test_diagnostic_cancel_control_sets_thread_safe_event() -> None:
     window.diagnostic_page.request_cancel()
     application.processEvents()
     assert worker.cancel_event.is_set()
-    assert "正在取消" in window.diagnostic_page.scan_status.text()
+    assert 'Cancelling' in window.diagnostic_page.scan_status.text()
     window.diagnostic_page.worker = None
     window.close()
 

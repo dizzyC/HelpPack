@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import locale
 import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from helppack.english import text as msg
 
 
 @dataclass(slots=True)
@@ -29,17 +32,14 @@ class CommandRunner:
 
     def run(self, args: list[str] | tuple[str, ...], *, timeout: float = 15) -> CommandResult:
         if not isinstance(args, (list, tuple)) or not args or not all(isinstance(item, str) and item for item in args):
-            raise ValueError("命令必须是非空参数数组")
+            raise ValueError(msg('命令必须是非空参数数组'))
         if any("\x00" in item or "\r" in item or "\n" in item for item in args):
-            raise ValueError("命令参数包含不允许的控制字符")
+            raise ValueError(msg('命令参数包含不允许的控制字符'))
         safe_args = tuple(args)
         try:
             completed = subprocess.run(
                 safe_args,
                 capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
                 timeout=timeout,
                 check=False,
                 shell=False,
@@ -48,18 +48,18 @@ class CommandRunner:
         except subprocess.TimeoutExpired as exc:
             return CommandResult(safe_args, -1, _text(exc.stdout), _text(exc.stderr), timed_out=True)
         except FileNotFoundError:
-            return CommandResult(safe_args, -1, "", "命令不可用", unsupported=True)
+            return CommandResult(safe_args, -1, "", msg('命令不可用'), unsupported=True)
         except PermissionError:
-            return CommandResult(safe_args, -1, "", "权限不足", permission_denied=True)
-        stderr = completed.stderr or ""
+            return CommandResult(safe_args, -1, "", msg("product.permission_denied"), permission_denied=True)
+        stderr = _text(completed.stderr)
         denied = completed.returncode != 0 and any(
             marker in stderr.lower() for marker in ("access is denied", "permissiondenied", "0x80041003", "拒绝访问")
         )
-        return CommandResult(safe_args, completed.returncode, completed.stdout or "", stderr, permission_denied=denied)
+        return CommandResult(safe_args, completed.returncode, _text(completed.stdout), stderr, permission_denied=denied)
 
     def powershell_json(self, script: str, *, timeout: float = 20) -> CommandResult:
         if not isinstance(script, str) or not script or "\x00" in script:
-            raise ValueError("PowerShell 脚本无效")
+            raise ValueError(msg('PowerShell 脚本无效'))
         utf8_script = "[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); " + script
         return self.run(
             [
@@ -79,7 +79,7 @@ class CommandRunner:
         allowed = {"ipconfig.exe", "netsh.exe", "wsreset.exe", "sc.exe", "powershell.exe", "w32tm.exe", "dism.exe", "sfc.exe", "pnputil.exe"}
         name = args[0].lower()
         if name not in allowed or any(any(c in item for c in "\x00\r\n") for item in args):
-            raise ValueError("修复命令不在允许列表")
+            raise ValueError(msg('修复命令不在允许列表'))
         system32 = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
         executable = system32 / ("WindowsPowerShell/v1.0/powershell.exe" if name == "powershell.exe" else name)
         safe_args = [str(executable), *args[1:]]
@@ -94,12 +94,19 @@ class CommandRunner:
                 stdout, stderr = process.communicate()
             return CommandResult(tuple(safe_args), process.returncode, _text(stdout), _text(stderr))
         except FileNotFoundError:
-            return CommandResult(tuple(safe_args), -1, "", "命令不可用", unsupported=True)
+            return CommandResult(tuple(safe_args), -1, "", msg('命令不可用'), unsupported=True)
         except PermissionError:
-            return CommandResult(tuple(safe_args), -1, "", "权限不足", permission_denied=True)
+            return CommandResult(tuple(safe_args), -1, "", msg("product.permission_denied"), permission_denied=True)
 
 
 def _text(value: str | bytes | None) -> str:
     if isinstance(value, bytes):
-        return value.decode("utf-8", errors="replace")
+        try:
+            return value.decode("utf-8")
+        except UnicodeDecodeError:
+            encoding = locale.getpreferredencoding(False)
+            if os.name == "nt":
+                import ctypes
+                encoding = f"cp{ctypes.windll.kernel32.GetACP()}"
+            return value.decode(encoding, errors="replace")
     return value or ""

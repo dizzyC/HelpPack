@@ -1,63 +1,39 @@
-# HelpPack 本机诊断能力可行性矩阵
+# Diagnostic Capabilities — English Edition
 
-本文是第一版实现边界，不把“在一台电脑上命令可用”等同于“所有 Windows 电脑都支持”。所有检查必须区分：未发现异常、检查失败、不支持、权限不足和数据不足。
+All default checks are L0/read-only. Findings expose evidence, confidence and unavailable/unsupported/permission/timeout outcomes separately. A suggestion is not a confirmed diagnosis.
 
-分级：A＝稳定只读；B＝可检查，且仅在用户针对单项操作确认后处理；C＝有限检查或只给建议；D＝第一版不实现。安全等级：L0 只读；L1 低风险可回滚；L2 可能中断服务/网络，需额外警告；L3 不自动执行。
+| Area | Implemented behavior | Safety / limitations | Verification scope |
+|---|---|---|---|
+| Support Bundle | Description, screenshots, privacy review, editable Markdown, ZIP and SHA-256 manifest | Best-effort redaction; screenshots require human review | Automated export/security tests; native source and EXE workflow |
+| Symptoms | English/Chinese keyword routing to relevant checks | Local rules, not remote AI or proven causes | Bilingual fixtures and Qt entry workflow |
+| Performance | Short CPU/memory/disk/network samples and relevant process evidence | Momentary measurements, not causation | Unit tests; local read-only collection |
+| Network | Adapter, gateway, system/custom DNS, proxy/direct HTTPS and target response | Selected target only; no certificate bypass or automatic public DNS; PAC limited | Unit simulations and read-only local probes |
+| Software | Local EXE/version/path/signature, current processes, bounded crash/blocking logs and runtime registration | Does not run EXE; presence/signature is not health proof | Four-scenario simulations; read-only local probe |
+| Storage | Selected-folder ranking, link/access skipping, cancellation and bounded traversal | Cache classification is a clue, not deletion approval | Temporary-folder tests; native UI entry |
+| Cache handling | One confirmed cache file moved to same-partition quarantine; persisted restore receipt | Does NOT free space; no permanent deletion or overwrite | Synthetic temporary-file move/restore tests only |
+| Audio | Outputs/default, mute/volume, services, requested quiet playback | Never changes system/default volume; physical hearing unverified | Read-only/mocked API and confirmation tests |
+| Bluetooth | Adapter, cached classic paired/connection state and services | Not complete BLE/profile coverage | Mocked and local read-only probes; physical devices unverified |
+| Printers | Default/offline/paused and queue counters; separately confirmed test page | No document names/owners; queued does not prove printed | Mocked confirmation tests; no physical print |
+| History | Local redacted records, user status, matching-scope comparison | Changes do not prove repair causation; original logs untranslated | Persistence/comparison tests and Qt workflows |
+| Timeline | Bounded installation/update/driver/crash/restart events | Missing logs may hide events; timing is only a clue | Simulations and local read-only probe |
+| Monitoring | Two-second samples, 10-minute ring, 2-hour maximum, before/after marker | Exit stops monitoring; unavailable counters remain null | Short live samples; retention/time limit simulated |
+| Store / TLS | Package/policy and supported Internet TLS settings checks; directed official guidance | No policy bypass, old TLS enablement or claimed Store recovery from registration | Mocked checks and safety tests; Store functionality not actually repaired |
+| Driver updates | Windows Update applicability search; allowlisted official vendor pages | Installation separately confirmed/high risk; INF execution remains blocked | Simulated matching/failure safeguards; installation unverified |
 
-| 能力 | 数据源与可靠证据 | 管理员 | 扫描改状态 | 分类/限制 | 第一版处理或修复 | 风险与回滚 |
-|---|---|---:|---:|---|---|---|
-| CPU/内存/磁盘/网络当前占用 | psutil 结构化计数器；性能使用 2 秒采样而非单点 | 否 | 否 | A/L0；短采样不能证明根因 | 实现，只显示样本和采样时长 | 无修改 |
-| 高资源进程 | psutil 两次 CPU 采样、RSS、I/O 可得部分 | 部分进程受限 | 否 | A/L0；瞬时升高仅为线索 | 实现，最多显示前 8 项 | 不自动结束进程 |
-| 运行时间、物理内存、分页 | psutil boot_time、virtual_memory、swap_memory | 否 | 否 | A/L0 | 实现 | 无修改 |
-| 分区容量、系统盘低空间 | psutil disk_partitions/disk_usage | 否 | 否 | A/L0；阈值是提醒，不是故障结论 | 实现；低于 15 GB 或 10%提醒 | 无修改 |
-| 临时目录大致占用 | 用户 TEMP/Windows TEMP 的有界遍历 | Windows TEMP 部分文件受限 | 否 | C/L0；跳过拒绝访问、重解析点，非精确 | 实现有界统计 | 第一版不清理 |
-| 用户/注册表启动项 | HKCU/HKLM Run/RunOnce 值 | HKLM 只读通常否 | 否 | B/L0→L1；条目存在不等于有害 | 实现检查；仅 HKCU Run/RunOnce 可选禁用 | 备份值/类型后删除；可恢复 |
-| 启动文件夹 | Known Folder 路径，仅列文件名/签名线索 | 否 | 否 | A/L0；不读取文件内容 | 实现检查 | 不删除文件 |
-| 登录/开机计划任务 | ScheduledTasks PowerShell 对象转 JSON | 某些任务需管理员 | 否 | C/L0；模块/字段因版本而异 | 实现有限检查 | 第一版不禁用 |
-| 自动启动第三方服务 | psutil Windows 服务结构化信息 | 部分访问受限 | 否 | C/L0；厂商识别并不绝对 | 实现有限检查 | 不批量禁用服务 |
-| 应用程序事件日志 | Get-WinEvent 对象筛选后转 JSON | 部分日志需管理员 | 否 | A/L0；单条事件不能证明根因 | 实现最近崩溃摘要 | 不修改日志 |
-| WER 记录 | WER ReportArchive/ReportQueue 元数据 | 部分目录受限 | 否 | C/L0；不读取用户文档/转储正文 | 第一版只统计存在性 | 不删除记录 |
-| 崩溃模块/异常代码 | 事件 1000/1001 的结构化属性和脱敏消息 | 通常否 | 否 | C/L0；事件格式随来源变化 | 展示可得证据，不断言责任模块 | 无修改 |
-| 程序版本/签名 | 文件版本 API；Authenticode PowerShell | 文件访问可能受限 | 否 | C/L0；仅对用户明确目标可靠 | 第一版不自动遍历程序 | 建议人工核对 |
-| 浏览器版本/残留进程 | 注册表 App Paths、文件版本、psutil 进程名 | 否 | 否 | A/L0；“正在运行”不等于残留 | 实现常见浏览器检测 | 不结束进程 |
-| 浏览器配置锁 | 已知锁文件是否存在与进程状态 | 否 | 否 | C/L0；锁文件存在不能单独判损坏 | 第一版仅提示人工检查 | 不读配置内容 |
-| 浏览器缓存 | 浏览器已知 Cache 目录 | 否 | 否 | B；厂商结构变化，误删可能影响会话 | 第一版不自动清理 | 只给官方设置入口建议 |
-| 网络适配器/IP/DHCP/网关/DNS | psutil 地址；PowerShell NetTCPIP 对象 JSON | 通常否 | 否 | A/L0；模块缺失时降级 | 实现；报告自动脱敏 IP/MAC/Wi-Fi 名 | 无修改 |
-| 网关连通/DNS/HTTPS | ping 参数数组、socket、Python TLS | 否 | 否 | A/L0；ICMP 可被禁，单站 HTTPS 非全网结论 | 实现独立结果与超时 | 无修改 |
-| WinHTTP 代理 | WinHTTP API 或 netsh | 否 | 否 | C/L0；netsh 本地化输出不作为关键判断 | 第一版仅用户代理稳定检查 | 不自动改 WinHTTP |
-| 当前用户代理/PAC | HKCU Internet Settings 结构化注册表值 | 否 | 否 | B/L0→L2 | 实现检查；可选重置当前用户代理 | 完整备份相关值；可恢复 |
-| Hosts 可疑重定向 | 只读解析非注释行 | 通常否 | 否 | C/L0；自定义记录可能合法 | 实现提醒，不判定恶意 | 不修改 Hosts |
-| Wi-Fi 状态/信号/SSID | Native Wi-Fi API 最可靠；netsh 文本本地化 | 否 | 否 | C/L0；第一版不解析本地化 netsh 文本 | 仅显示适配器状态 | 不收集密码；SSID 脱敏 |
-| 系统时间与 HTTPS | 本地时间/时区、TLS 验证结果 | 否 | 否 | C/L0；无法仅凭本机判断绝对偏差 | 展示时间与证书错误线索 | 不改时间 |
-| DNS 刷新/DHCP 续租/指定 DNS | ipconfig/NetTCPIP | DHCP/DNS 常需管理员 | 是 | B/L1-L2；会短暂影响网络 | 第一版只给建议 | 后续需保存适配器原配置并复查 |
-| 网络栈/Winsock/适配器/Wi-Fi/Hosts 修改 | 系统命令/API | 是 | 是 | D/L2-L3；影响广或难可靠回滚 | 第一版不执行 | 人工操作与系统还原建议 |
-| 音频/蓝牙/打印服务 | psutil win_service_get | 查询通常否 | 否 | A/L0 | 实现服务状态 | 第一版不重启服务 |
-| PnP 状态/禁用/错误码 | Get-PnpDevice/Get-PnpDeviceProperty JSON | 某些详情受限 | 否 | C/L0；模块、语言及厂商差异 | 实现设备状态汇总 | 不启用/禁用设备 |
-| 默认音频设备 | Core Audio COM API | 否 | 否 | C/L0；需额外 COM 实现 | 第一版不实现 | 打开系统设置建议 |
-| 默认打印机/队列 | PrintManagement/CIM 对象 | 部分受限 | 否 | C/L0；模块并非所有版本可用 | 实现后台服务；队列只有限检查 | 不取消任务 |
-| 驱动提供商/版本/日期 | PnP 签名驱动 CIM | 可能 | 否 | C/L0；旧日期不等于故障 | 第一版仅 PnP 状态 | 不下载、卸载或更新驱动 |
-| Windows Update 服务 | 服务 API | 查询通常否 | 否 | A/L0 | 实现 wuauserv/BITS/cryptsvc 状态 | 第一版不启动服务 |
-| 更新历史/失败码 | Windows Update COM API/事件日志 | 通常否 | 否 | C/L0；COM 历史可能慢或不可用 | 实现最近更新事件有限摘要 | 不安装/卸载更新 |
-| 等待重启 | 多个已知注册表标记 | 否 | 否 | A/L0；厂商安装器可能另有标记 | 实现已知 Windows 标记 | 不自动重启 |
-| 组件存储状态 | DISM ScanHealth/CheckHealth | 是/耗时 | 否（检查） | C/L0；可能很慢，无法给精确进度 | 第一版不在常规扫描运行 | 提供人工建议 |
-| `sfc /verifyonly` | 系统命令 | 是/耗时 | 否（检查） | C/L0；耗时且输出本地化 | 第一版不自动运行 | 提供说明 |
-| SFC /scannow、DISM RestoreHealth | 系统命令 | 是 | 是 | B/L2；耗时、不可强停、可能联网 | 第一版不执行 | 建议管理员手动操作/备份；无可靠通用回滚 |
-| CBS/DISM/更新日志 | Windows 日志文件/事件 | 部分需管理员 | 否 | C/L0；体积大、本地化且需问题上下文 | 第一版只用事件摘要 | 不清理日志 |
-| BugCheck/Kernel-Power/WHEA | System 事件日志事件 ID/Provider | 通常否 | 否 | A/L0；Kernel-Power 仅表示异常关机 | 实现最近事件摘要 | 无修改 |
-| 小型转储存在性 | `%SystemRoot%\\Minidump` 文件元数据 | 可能受限 | 否 | A/L0；不解析/上传内容 | 实现数量与最近时间 | 不删除转储 |
-| 转储模块分析 | 调试符号/WinDbg | 需额外工具 | 否 | D；模块名不等于根因 | 第一版不实现 | 建议专业分析 |
-| 电池容量/循环/健康 | psutil 可给电量；WMI/厂商 ACPI 可给容量 | 通常否 | 否 | C/L0；固件字段常缺失 | 实现电池存在/电量；容量字段不可用时明确未知 | 无修改 |
-| 磁盘型号/介质/健康/SMART | Get-PhysicalDisk/Storage Reliability 对象 | 详细 SMART 常需管理员 | 否 | C/L0；USB/RAID/厂商驱动可能不暴露 | 实现 Get-PhysicalDisk 摘要 | 风险时优先建议备份；不修复磁盘 |
-| 温度 | ACPI WMI/厂商接口 | 常需厂商支持 | 否 | D；标准接口覆盖率和准确度不足 | 明确显示不支持 | 不调风扇/电压/BIOS |
-| BIOS/固件/超频/坏道修复 | 厂商工具/固件/写盘操作 | 是 | 是 | D/L3 | 第一版不实现 | 仅官方渠道与备份建议 |
+## Individually confirmed repair actions
 
-## 第一版实际边界
+| Action | Risk / authority | Recovery | Verification |
+|---|---|---|---|
+| Clear DNS cache | L1; one action | Cache rebuilds; no configuration rollback | Mocked execution/recheck |
+| Renew selected DHCP / restore DHCP DNS | L2; selected interface, admin where required | Renewal not reliably reversible; DNS uses encrypted snapshot | Simulated safety, backup and recheck |
+| Reset current-user proxy/PAC or disable selected user startup entry | L2; exact registry allowlist | Restore backed-up values/types | Mocked backup/restore tests |
+| Store cache / eligible current-user registration | Selected package only; current-user registration non-elevated | Cache regenerates; registration not guaranteed reversible | Simulated prerequisites and verification |
+| Store data reset | High risk; second confirmation **RESET** | Cannot reliably restore app data | Mocked confirmation only |
+| Services / time synchronization | Exact allowlisted target; no startup-type/time-zone change | Depends on action; interrupted tasks not recoverable | Mocked execution |
+| Winsock / guarded DHCP TCP/IP reset | High risk; strong evidence, second confirmation, admin | Not reliably reversible; manual restart and verification | Guard/permission simulations; real repair unverified |
+| WUA driver installation | High risk; match/version/license/export safeguards and second confirmation | Best effort only; never promise rollback | Mocked safety paths; real device install unverified |
+| DISM / SFC repair | High risk; evidence, admin, second confirmation, long-running | Not reliably reversible; no forced termination | Mocked execution/recheck; real component repair unverified |
 
-- 默认与“综合检查”只执行 L0 检查；不会运行 SFC、DISM、深度磁盘检查或任何修复。
-- 自动修复仅实现两个严格限定、可备份回滚的对象：禁用一个明确选择的 **HKCU Run/RunOnce** 启动项（L1），以及重置当前用户代理/PAC（L2）。二者都必须经过对象级选择、影响/权限/命令等价操作展示和单独确认；本项目的真实验收不执行它们。
-- 所有外部命令使用固定参数数组、超时、退出码与标准错误；用户文本不进入命令。
-- 权限不足、命令缺失/系统不支持、超时、数据不足分别建模。PowerShell 只输出 JSON 对象；本地化人类文本不用于关键判定。
-- L3 操作和没有可靠通用回滚的修改不由第一版应用执行。
-# 0.2.2 发布候选状态
+No bulk high-risk repair, automatic restart, registry cleaner, driver accelerator, memory optimizer, security-software bypass, enterprise-policy override, BitLocker change or generic full-disk cleanup is provided.
 
-以下原矩阵对应先前正式版本。当前新增能力、未完成项与实测边界以 [0.2.2 验证记录](verification-v0.2.2.md) 为准；新增代码存在不代表已通过真实修复验收。
+No real English-Windows environment was available. English output fixtures are not real English-Windows acceptance. See the current verification report for exact runs and exclusions.

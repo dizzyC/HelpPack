@@ -26,5 +26,5 @@ def test_absent_battery_and_unsupported_disk_api_are_reported(monkeypatch) -> No
     context = ScanContext(UnsupportedRunner(), __import__("threading").Event())
     result = BatteryDiskHealthCheck().run(context)[0]
     assert result.status == DiagnosticStatus.UNSUPPORTED
-    assert result.evidence[0].value == "未检测到电池"
-    assert "不支持" in result.evidence[-1].value
+    assert result.evidence[0].value == 'No battery detected'
+    assert 'unsupported' in result.evidence[-1].value

@@ -1,45 +1,7 @@
-# 0.3.0.dev1 开发验证记录
+# Historical System-Repair Preview Scope
 
-本记录针对开发预览，旧 `verification-report.md` 只代表此前版本。
+The earlier v0.3 plan expanded individual repair coordination, DNS/Store/services/drivers and component-repair safety. A plan or simulated test is not a released version or a verified real repair.
 
-## 已落地
+The current edition retains allowlisted actions, scoped parameters, expiring confirmations, request validation, individual UAC helpers, backups, recovery disclosures and rechecks. INF installation remains blocked where signature/match/recovery validation is incomplete. Vendor pages are manual official entry points, not automatic installers.
 
-- 动作注册表、风险与权限元数据、确认有效期、目标及元数据篡改拒绝。
-- DNS 缓存清理、限定 DHCP 网卡操作；执行前重新读取接口并拒绝静态/虚拟网卡。
-- 当前用户 Store 三种操作、组织策略/包存在性复核、数据重置文字确认。
-- 白名单服务启动/重启，不更改启动类型，拒绝被禁用的服务。
-- 独立 Windows Update 驱动搜索、严格匹配单项安装路径、原 OEM 驱动导出。
-- 官方厂商 HTTPS 页入口，无设备序列号参数。
-- 同 EXE UAC 辅助入口、HMAC、过期检查、当前用户文件所有者检查、单次请求与结果校验。
-- 操作前快照、网络/代理 DPAPI 备份、脱敏操作记录；结果区分命令完成与问题修复。
-- 后台修复线程、第二次确认、进度状态、等待完成后复查、修复期间关闭保护。
-
-## 尚未完成，禁止声称已发布
-
-- 厂商驱动元数据连接器、安装包下载、Authenticode/目录签名完整验证和厂商安装器流程。
-- 本地 INF 安装的硬件/版本/目录签名验证：当前明确拒绝执行。
-- Winsock/TCP/IP 故障定位器：未取得可靠证据时不展示全局重置动作，执行端也拒绝。
-- 组件扫描与 DISM/SFC 的完整证据链、实时百分比进度和隔离环境修复验收；当前不推荐这两项自动修复。
-- 时间同步故障检测与界面入口。
-- DHCP/DNS 的完整提权回滚界面；当前只提供注册表动作的最近回滚入口。
-- 驱动签名失败/错误发布者/下载重定向/版本兼容性的完整测试矩阵。
-- Windows 10/11 虚拟机上的真实修改、UAC 成功/取消、网络断开恢复和驱动安装验收。
-
-## 本轮验证
-
-- Python 3.12 独立项目虚拟环境已建立，依赖安装成功；不修改系统级 Python。
-- 自动化测试覆盖旧报告与导出流程，以及新增动作参数、强制风险策略、确认篡改、请求路径越界、重放、过期、网卡变化和禁用服务拒绝。
-- Qt 自动验证通过窗口缩放、中文显示、后台响应、取消扫描及长文本完整查看。
-- pytest：54 项通过；Ruff 静态检查通过；git diff --check 通过。
-- run.ps1 源码启动烟雾检查退出码 0。
-- 本机综合只读扫描：20 项检查完成，代理与启动项前后快照一致，执行修复数 0，报告隐私扫描通过。
-- 报告和 ZIP：可正常读取 report.md、manifest.json 和虚构附件；两个文件的 SHA-256 均与 manifest 一致。
-- 发布内容扫描：67 个文本文件，未发现阻断项；识别出的令牌样例均为明确虚构测试数据。
-- PyInstaller 单文件构建成功：`dist/v0.3.0-preview/HelpPack.exe`，46,772,829 字节。保留原 dist 根目录 EXE。
-- EXE SHA-256：`B9F23BD5BF054903D5A6221A9604108DCBEFA3D6F689E41F821E7030309CCB6A`。
-- EXE 真实桌面启动成功，已通过窗口截图及辅助功能树观察首页。尝试点击“本机诊断”时，桌面工具两次返回 `window bounds changed; call get_window_state before using this window`；没有将此计为真实交互通过。
-- 没有真实修改开发电脑的驱动、网络、商店、服务或系统组件。GitHub 未推送，未创建 v0.3.0 Release。
-
-## 发布门禁
-
-当前未发现可用 Windows Sandbox/虚拟机运行工具。新增系统修改未做隔离实测，且以上实现项仍有缺口，因此不得创建 v0.3.0 正式 Release 或上传此预览冒充正式版本。恢复实施时先完成剩余实现，再在可还原 Windows 10/11 环境补齐真实验证，最后才执行敏感信息审计、提交、推送与 Release。
+No Store reset, network reset, service mutation, driver installation or DISM/SFC action is run on the development computer for this English task. See the [capability matrix](diagnostic-capability-matrix.md) and [current verification report](verification-report.md) for implemented and unverified boundaries.

@@ -45,10 +45,10 @@ def desktop():
     application = QApplication([])
     configure_local_font(application)
     window = MainWindow()
-    window.setWindowTitle("HelpPack 功能完整性验收 · 虚构长文字")
+    window.setWindowTitle("HelpPack English — Fictional Long-Text Check")
     window.investigation_page.history = DiagnosticHistoryStore(ROOT / "dist" / "validation" / "desktop_history")
-    window._go(7, "专项排查 · 真实窗口验收")
-    window.investigation_page.show_report("## 虚构长文字验收\n\n" + "这是一段虚构的可滚动、可选择复制证据，不含真实诊断信息。\n" * 200 + "\n全文末尾验证标记：HELPPACK_END")
+    window._go(7, "Targeted Checks — Native Window Check")
+    window.investigation_page.show_report("## Fictional Long-Text Check\n\n" + "This is fictional scrollable, selectable evidence, not real diagnostic data.\n" * 200 + "\nEnd marker: HELPPACK_END")
     window.show()
     output = ROOT / "dist" / "validation" / "desktop_completeness"
     output.mkdir(parents=True, exist_ok=True)
@@ -90,7 +90,7 @@ def live():
         store.save_record({"kind": kind, "time": result.timestamp, "status": "稍后处理", "report": report})
         checks.append({"kind": kind, "read_only_executed": True, "states": [{"layer": f.layer, "state": f.state} for f in result.findings]})
 
-    print("只读验证：不修复系统、不播放声音、不提交打印任务", flush=True)
+    print("Read-only validation: no repairs, sound playback or printing", flush=True)
     summary, _ = diagnose_symptom("电脑突然变卡", cancel, progress, runner)
     store.save(summary)
     reports.append(generate_diagnostic_markdown(summary))
@@ -152,7 +152,7 @@ def live():
         assert archive.read("attachments/synthetic_processed.png") == processed.read_bytes()
         for entry in manifest["files"]:
             assert hashlib.sha256(archive.read(entry["name"])).hexdigest() == entry["sha256"]
-    assert "仍未解决的问题" in concise_summary(report)
+    assert "Unresolved" in concise_summary(report)
     records = store.list_records()
     assert records
     store.mark(records[0]["id"], "未解决")
@@ -169,7 +169,7 @@ def live():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--live", action="store_true", help="执行本机只读检查并验证本地报告/ZIP")
-    group.add_argument("--desktop", action="store_true", help="打开独立验收窗口，不自动运行检查")
+    group.add_argument("--live", action="store_true", help="Run read-only local checks and validate reports/ZIP")
+    group.add_argument("--desktop", action="store_true", help="Open a separate inspection window without running checks")
     args = parser.parse_args()
     raise SystemExit(desktop() if args.desktop else live())

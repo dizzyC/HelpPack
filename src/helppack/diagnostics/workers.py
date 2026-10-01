@@ -4,6 +4,8 @@ import threading
 
 from PySide6.QtCore import QObject, Signal, Slot
 
+from helppack.english import text as msg
+
 from .elevation import ElevationBroker
 from .engine import DiagnosticEngine
 from .models import RepairSuggestion
@@ -32,7 +34,7 @@ class DiagnosticWorker(QObject):
             )
             self.completed.emit(summary)
         except Exception as exc:  # noqa: BLE001 - worker boundary reports a user-safe failure
-            self.failed.emit(f"诊断未能完成：{type(exc).__name__}")
+            self.failed.emit(msg('诊断未能完成：{0}', type(exc).__name__))
         finally:
             self.finished.emit()
 
@@ -56,18 +58,18 @@ class RepairWorker(QObject):
     def run(self) -> None:
         try:
             from ..redaction import redact_text
-            self.progress.emit("正在创建操作快照并验证目标…")
+            self.progress.emit(msg('正在创建操作快照并验证目标…'))
             coordinator = RepairCoordinator()
             prepared = coordinator.prepare(self.suggestion)
             if prepared.requires_second_confirmation:
                 expected = prepared.confirmation_phrase
                 if (self.second_confirmation != expected if expected else self.second_confirmation is not True):
-                    raise ValueError("缺少有效的第二次确认")
+                    raise ValueError(msg('缺少有效的第二次确认'))
             if self.suggestion.requires_admin:
-                self.progress.emit("请在 Windows 用户账户控制窗口中确认此单项操作…")
+                self.progress.emit(msg('请在 Windows 用户账户控制窗口中确认此单项操作…'))
                 outcome = ElevationBroker().execute(self.suggestion)
             else:
-                self.progress.emit("正在执行所选修复；不会自动重启电脑…")
+                self.progress.emit(msg('正在执行所选修复；不会自动重启电脑…'))
                 outcome = coordinator.execute(
                     prepared,
                     user_confirmed=True,

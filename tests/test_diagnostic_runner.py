@@ -8,7 +8,7 @@ from helppack.diagnostics.runner import CommandResult, CommandRunner
 
 
 def test_command_arguments_reject_control_character_injection() -> None:
-    with pytest.raises(ValueError, match="控制字符"):
+    with pytest.raises(ValueError, match='control characters'):
         CommandRunner().run(["safe.exe", "value\r\nmalicious"])
 
 
@@ -28,7 +28,7 @@ def test_localized_human_output_is_not_guessed_as_structured_data() -> None:
     command = CommandResult(("powershell",), 0, "任务已准备就绪，但这是本地化文本", "")
     result = _command_json_result(command, "id", "分类", "名称", "证据", "限制")
     assert result.status == DiagnosticStatus.UNKNOWN
-    assert "无法结构化" in result.explanation
+    assert 'could not be read structurally' in result.explanation
 
 
 def test_permission_unsupported_and_timeout_are_distinct() -> None:

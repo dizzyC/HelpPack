@@ -10,6 +10,8 @@ from pathlib import Path
 
 import psutil
 
+from helppack.english import text as msg
+
 from .investigation import Finding, Investigation
 
 
@@ -20,13 +22,13 @@ def linked(path: Path) -> bool:
 
 def assert_local_path(root: Path, path: Path) -> None:
     if not root.is_absolute() or not path.is_absolute() or ".." in path.parts or ".." in root.parts or not path.is_relative_to(root):
-        raise ValueError("路径不在用户选择的目录范围内")
+        raise ValueError(msg('路径不在用户选择的目录范围内'))
     for candidate in [root, *root.parents, *path.relative_to(root).parents]:
         checked = candidate if candidate.is_absolute() else root / candidate
         if linked(checked):
-            raise ValueError("不能操作目录链接或重解析点")
+            raise ValueError(msg('不能操作目录链接或重解析点'))
     if linked(path):
-        raise ValueError("不能操作文件链接或重解析点")
+        raise ValueError(msg('不能操作文件链接或重解析点'))
 
 
 def classify(path: Path) -> str:
@@ -56,31 +58,31 @@ class SpaceScan:
     limited: bool = False
 
     def markdown(self) -> str:
-        result = Investigation("磁盘空间分析", "用户主动选择的目录")
+        result = Investigation(msg('磁盘空间分析'), msg('用户主动选择的目录'))
         for part in psutil.disk_partitions():
             try:
                 usage = psutil.disk_usage(part.mountpoint)
-                result.findings.append(Finding("分区 " + part.device, "已读取", f"总量 {usage.total / 2**30:.1f} GiB，剩余 {usage.free / 2**30:.1f} GiB"))
+                result.findings.append(Finding(msg('分区 ') + part.device, "已读取", msg('总量 {0:.1f} GiB，剩余 {1:.1f} GiB', usage.total / 2 ** 30, usage.free / 2 ** 30)))
             except OSError:
                 continue
-        result.findings.append(Finding("目录排行", "不完整" if self.cancelled or self.limited or self.skipped else "完成", "\n".join(f"{name}：{size / 2**20:.1f} MiB" for name, size in self.ranking[:30])))
-        result.recommendations = [f"跳过链接/不可访问项目 {self.skipped} 个；取消={self.cancelled}；达到扫描上限={self.limited}。",
-                                  "缓存分类是名称线索，不证明可以安全删除；应用文件和用户文件不自动清理。移出后可恢复，但同盘隔离区不会释放该分区空间。"]
+        result.findings.append(Finding(msg('目录排行'), "不完整" if self.cancelled or self.limited or self.skipped else "完成", "\n".join(f"{name}：{size / 2**20:.1f} MiB" for name, size in self.ranking[:30])))
+        result.recommendations = [msg('跳过链接/不可访问项目 {0} 个；取消={1}；达到扫描上限={2}。', self.skipped, self.cancelled, self.limited),
+                                  msg('缓存分类是名称线索，不证明可以安全删除；应用文件和用户文件不自动清理。移出后可恢复，但同盘隔离区不会释放该分区空间。')]
         return result.markdown()
 
 
 def scan_directory(raw_root: str, cancel, progress, max_entries: int = 200000, max_seconds: int = 120) -> SpaceScan:
     if not raw_root.strip():
-        raise ValueError("请先选择扫描目录")
+        raise ValueError(msg('请先选择扫描目录'))
     root = Path(os.path.abspath(raw_root))
     if str(root).startswith("\\\\"):
-        raise ValueError("仅支持本机普通目录，不扫描网络共享或设备命名空间")
+        raise ValueError(msg('仅支持本机普通目录，不扫描网络共享或设备命名空间'))
     if not root.is_dir() or linked(root):
-        raise ValueError("请选择真实目录，不支持目录链接")
+        raise ValueError(msg('请选择真实目录，不支持目录链接'))
     # Also reject a root reached through any reparse-point ancestor.
     for parent in root.parents:
         if linked(parent):
-            raise ValueError("所选目录的上级是链接，不能扫描")
+            raise ValueError(msg('所选目录的上级是链接，不能扫描'))
     result = SpaceScan(root)
     stack = [root]
     seen_files = set()
@@ -128,14 +130,14 @@ def scan_directory(raw_root: str, cancel, progress, max_entries: int = 200000, m
                     except OSError:
                         result.skipped += 1
                     if entries % 200 == 0:
-                        progress(0, f"已检查 {entries} 项，扫描可取消")
+                        progress(0, msg('已检查 {0} 项，扫描可取消', entries))
         except (OSError, ValueError):
             result.skipped += 1
         if result.limited:
             break
     result.ranking = sorted(ranking.items(), key=lambda row: row[1], reverse=True)
     result.cancelled |= cancel.is_set()
-    progress(100, f"目录扫描结束，共 {len(result.files)} 个文件")
+    progress(100, msg('目录扫描结束，共 {0} 个文件', len(result.files)))
     return result
 
 
@@ -149,20 +151,20 @@ class MoveReceipt:
 
 def quarantine_one(scan: SpaceScan, entry: FileEntry, *, confirmed: bool) -> MoveReceipt:
     if not confirmed:
-        raise PermissionError("清理需要逐项确认")
+        raise PermissionError(msg('清理需要逐项确认'))
     if entry not in scan.files or not entry.category.startswith("缓存"):
-        raise ValueError("只支持预览中的缓存候选；不会移出应用或用户文件")
+        raise ValueError(msg('只支持预览中的缓存候选；不会移出应用或用户文件'))
     assert_local_path(scan.root, entry.path)
     info = entry.path.stat()
     if (info.st_size, info.st_mtime_ns, info.st_ino) != (entry.size, entry.mtime_ns, entry.inode):
-        raise ValueError("文件在扫描后发生变化，请重新扫描")
+        raise ValueError(msg('文件在扫描后发生变化，请重新扫描'))
     for variable in ("SystemRoot", "ProgramFiles", "ProgramFiles(x86)"):
         protected = os.environ.get(variable)
         if protected and entry.path.is_relative_to(Path(protected)):
-            raise ValueError("不清理 Windows 或应用安装目录")
+            raise ValueError(msg('不清理 Windows 或应用安装目录'))
     base = scan.root / ".helppack-quarantine"
     if base.exists() and linked(base):
-        raise ValueError("隔离目录不能是链接")
+        raise ValueError(msg('隔离目录不能是链接'))
     folder = base / uuid.uuid4().hex
     folder.mkdir(parents=True, exist_ok=False)
     destination = folder / "payload"
@@ -199,11 +201,11 @@ def recovery_receipts(root: Path) -> list[MoveReceipt]:
 
 def restore_one(receipt: MoveReceipt, *, confirmed: bool) -> None:
     if not confirmed:
-        raise PermissionError("恢复需要确认")
+        raise PermissionError(msg('恢复需要确认'))
     assert_local_path(receipt.root, receipt.destination)
     if receipt.destination.stat().st_ino != receipt.inode or receipt.source.exists():
-        raise ValueError("文件已变化或原位置已有同名文件，不能覆盖")
+        raise ValueError(msg('文件已变化或原位置已有同名文件，不能覆盖'))
     if not receipt.source.parent.is_dir():
-        raise ValueError("原目录已不存在，不能自动恢复")
+        raise ValueError(msg('原目录已不存在，不能自动恢复'))
     assert_local_path(receipt.root, receipt.source.parent)
     receipt.destination.rename(receipt.source)

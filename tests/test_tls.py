@@ -22,7 +22,7 @@ def run(monkeypatch, *, mask=None, supported=True, policy=None, disabled=False):
 def test_missing_value_is_default_not_disabled(monkeypatch):
     result = run(monkeypatch)
     assert result.status == DiagnosticStatus.NORMAL
-    assert "不能判定为关闭" in result.evidence[0].value
+    assert 'not evidence of being disabled' in result.evidence[0].value
     assert not result.repair_suggestions
 
 
@@ -34,14 +34,14 @@ def test_unchecked_supported_protocol_noticed(monkeypatch, mask):
 def test_windows10_never_requires_tls13(monkeypatch):
     result = run(monkeypatch, mask=0x800, supported=False)
     assert result.status == DiagnosticStatus.NORMAL
-    assert "不支持" in result.evidence[2].value
+    assert 'Unsupported' in result.evidence[2].value
 
 
 def test_schannel_disabled_and_policy_reported_no_mutations(monkeypatch):
     result = run(monkeypatch, mask=0x2800, policy=0x800, disabled=True)
     assert result.status == DiagnosticStatus.NOTICE
-    assert "显式禁用" in result.evidence[1].value
-    assert "联系管理员" in result.recommendations[0]
+    assert 'explicit disable' in result.evidence[1].value
+    assert "Contact your administrator" in result.recommendations[0]
     assert not result.repair_suggestions
 
 

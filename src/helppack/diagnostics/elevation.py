@@ -14,6 +14,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from helppack.english import text as msg
+
 from ..redaction import redact_text
 from .models import (
     RepairSuggestion,
@@ -61,13 +63,13 @@ class ElevationRequestStore:
     def validate_path(self, path: str | Path) -> Path:
         original = Path(path)
         if original.is_symlink() or original.is_junction():
-            raise ElevationError("提权请求不能是链接")
+            raise ElevationError(msg('提权请求不能是链接'))
         candidate = Path(path).resolve()
         root = self.root.resolve()
         if candidate.parent != root or not candidate.name.endswith(".request.json"):
-            raise ElevationError("提权请求路径越界")
+            raise ElevationError(msg('提权请求路径越界'))
         if not re.fullmatch(r"[0-9a-f]{32}\.request\.json", candidate.name):
-            raise ElevationError("提权请求编号格式无效")
+            raise ElevationError(msg('提权请求编号格式无效'))
         if os.name == "nt":
             from .windows_security import assert_current_user_owns
             assert_current_user_owns(candidate)
@@ -83,15 +85,15 @@ class ElevationBroker:
         maximum = timeout or max(120, min(suggestion.estimated_seconds + 120, 7500))
         exit_code = _run_as_admin(request_path, secret, maximum)
         if exit_code == 1223:
-            raise ElevationError("用户取消了 Windows 管理员权限确认")
+            raise ElevationError(msg('用户取消了 Windows 管理员权限确认'))
         if not result_path.is_file():
-            raise ElevationError(f"管理员辅助进程没有返回结果（退出码 {exit_code}）")
+            raise ElevationError(msg('管理员辅助进程没有返回结果（退出码 {0}）', exit_code))
         result = json.loads(result_path.read_text(encoding="utf-8"))
         signature = str(result.pop("hmac", ""))
         if not hmac.compare_digest(signature, _sign(result, secret)):
-            raise ElevationError("辅助进程结果校验失败")
+            raise ElevationError(msg('辅助进程结果校验失败'))
         if not result.get("ok"):
-            raise ElevationError(str(result.get("error", "管理员操作失败")))
+            raise ElevationError(str(result.get("error", msg('管理员操作失败'))))
         return RepairOutcome(**result["outcome"])
 
 
@@ -106,23 +108,23 @@ def run_elevated_helper(request_path: str, secret: str, store: ElevationRequestS
         if result_path.exists():
             return 2
         if path.stat().st_size > 65536:
-            raise ElevationError("提权请求超过大小限制")
+            raise ElevationError(msg('提权请求超过大小限制'))
         payload = json.loads(path.read_text(encoding="utf-8"))
         signature = str(payload.pop("hmac", ""))
         if not hmac.compare_digest(signature, _sign(payload, secret)):
-            raise ElevationError("提权请求摘要不匹配")
+            raise ElevationError(msg('提权请求摘要不匹配'))
         if datetime.now(UTC) > datetime.fromisoformat(str(payload["expires_at"])):
-            raise ConfirmationRequired("提权请求已过期")
+            raise ConfirmationRequired(msg('提权请求已过期'))
         if path.stem.split(".", 1)[0] != payload.get("operation_id"):
-            raise ElevationError("提权请求编号不匹配")
+            raise ElevationError(msg('提权请求编号不匹配'))
         if not re.fullmatch(r"[0-9a-f]{32}", str(payload.get("nonce", ""))):
-            raise ElevationError("提权请求随机标识无效")
+            raise ElevationError(msg('提权请求随机标识无效'))
         # Exclusive creation atomically consumes the request before any mutation.
         with path.with_suffix(".consumed").open("x", encoding="utf-8") as marker:
             marker.write(datetime.now(UTC).isoformat())
         suggestion = _suggestion_from_dict(dict(payload["suggestion"]))
         if not suggestion.requires_admin or suggestion.action_id not in ADMIN_ACTIONS:
-            raise ElevationError("当前用户操作不能通过管理员辅助进程执行")
+            raise ElevationError(msg('当前用户操作不能通过管理员辅助进程执行'))
         coordinator = RepairCoordinator()
         prepared = coordinator.prepare(suggestion)
         confirmation: str | bool = suggestion.confirmation_phrase or True
@@ -147,7 +149,7 @@ def _sign(payload: dict[str, Any], secret: str) -> str:
     try:
         key = bytes.fromhex(secret)
     except ValueError as exc:
-        raise ElevationError("提权能力令牌无效") from exc
+        raise ElevationError(msg('提权能力令牌无效')) from exc
     return hmac.new(key, data, hashlib.sha256).hexdigest()
 
 
@@ -175,7 +177,7 @@ def _suggestion_to_dict(item: RepairSuggestion) -> dict[str, Any]:
 def _suggestion_from_dict(value: dict[str, Any]) -> RepairSuggestion:
     target = value.get("target")
     if not isinstance(target, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in target.items()):
-        raise ElevationError("提权目标参数类型无效")
+        raise ElevationError(msg('提权目标参数类型无效'))
     return RepairSuggestion(
         action_id=str(value["action_id"]), display_name=str(value["display_name"]), target=target,
         safety_level=SafetyLevel(value["safety_level"]), requires_admin=bool(value["requires_admin"]),
@@ -193,7 +195,7 @@ def _outcome_to_dict(item: RepairOutcome) -> dict[str, Any]:
 
 def _run_as_admin(request_path: Path, secret: str, timeout: int) -> int:
     if os.name != "nt":
-        raise ElevationError("管理员辅助模式仅支持 Windows")
+        raise ElevationError(msg('管理员辅助模式仅支持 Windows'))
     if getattr(sys, "frozen", False):
         executable = sys.executable
         arguments = ["--elevated-helper", str(request_path), secret]
@@ -229,11 +231,11 @@ def _run_as_admin(request_path: Path, secret: str, timeout: int) -> int:
         code = ctypes.get_last_error()
         if code == 1223:
             return code
-        raise ElevationError(f"无法启动管理员辅助进程（Windows 错误 {code}）")
+        raise ElevationError(msg('无法启动管理员辅助进程（Windows 错误 {0}）', code))
     wait_result = kernel.WaitForSingleObject(info.hProcess, int(timeout * 1000))
     if wait_result == 0x00000102:
         kernel.CloseHandle(info.hProcess)
-        raise ElevationError("管理员操作等待超时；未强制终止系统修复进程")
+        raise ElevationError(msg('管理员操作等待超时；未强制终止系统修复进程'))
     exit_code = ctypes.c_ulong()
     kernel.GetExitCodeProcess(info.hProcess, ctypes.byref(exit_code))
     kernel.CloseHandle(info.hProcess)

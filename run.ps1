@@ -1,9 +1,17 @@
+param([string]$PythonExe = "")
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$PythonExe = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
+if (-not $PythonExe) { $PythonExe = Join-Path $ProjectRoot ".venv\Scripts\python.exe" }
 
 if (-not (Test-Path -LiteralPath $PythonExe)) {
-    throw "未找到项目虚拟环境。请先按照 README.md 完成开发环境搭建。"
+    throw "Project virtual environment not found. Follow the setup instructions in README.md."
 }
 
-& $PythonExe -m helppack
+Push-Location $ProjectRoot
+try {
+    $OriginalPythonPath = $env:PYTHONPATH
+    $env:PYTHONPATH = Join-Path $ProjectRoot "src"
+    & $PythonExe -m helppack
+    if ($LASTEXITCODE -ne 0) { throw "HelpPack could not start." }
+}
+finally { $env:PYTHONPATH = $OriginalPythonPath; Pop-Location }

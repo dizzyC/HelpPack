@@ -48,14 +48,14 @@ def test_real_entry_route_task_history_compare_and_attach(tmp_path, monkeypatch)
     window = MainWindow()
     page = window.investigation_page
     page.history = DiagnosticHistoryStore(tmp_path / "history")
-    click(window, "症状向导与专项排查")
+    click(window, 'Symptom Guide and Targeted Checks')
     assert window.stack.currentWidget() == page
     page.symptom.setText("只有某个网站打不开")
-    assert "网络" in page.plan.text()
+    assert 'Network' in page.plan.text()
     summary = ScanSummary("模拟症状", "2026-01-01", "2026-01-01", False, [])
     from helppack.ui import investigation_page as module
     monkeypatch.setattr(module, "diagnose_symptom", lambda *args: (summary, []))
-    click(page, "按症状开始只读诊断")
+    click(page, 'Run Symptom Checks')
     await_idle(page)
     assert "只有某个网站" in page.output.toPlainText()
     assert len(page.history.list_records()) == 1
@@ -63,23 +63,23 @@ def test_real_entry_route_task_history_compare_and_attach(tmp_path, monkeypatch)
     def network(*args):
         return Investigation("模拟网络", findings=[Finding("系统 DNS", "失败", "虚构错误")])
     monkeypatch.setattr(module, "investigate_network", network)
-    click(page, "开始网络分层检查")
+    click(page, 'Run Layered Network Checks')
     await_idle(page)
     monkeypatch.setattr(module, "investigate_network", lambda *args: Investigation("模拟网络", findings=[Finding("系统 DNS", "有结果", "虚构地址")]))
-    click(page, "开始网络分层检查")
+    click(page, 'Run Layered Network Checks')
     await_idle(page)
     page.refresh_history()
     page.records.item(0).setSelected(True)
     page.records.item(1).setSelected(True)
     page.compare_history()
-    assert "失败 → 有结果" in page.output.toPlainText() or "有结果 → 失败" in page.output.toPlainText()
+    assert "Failed → Results found" in page.output.toPlainText() or "Results found → Failed" in page.output.toPlainText()
     page.records.setCurrentRow(0)
     page.disposition.setCurrentText("已解决")
     page.mark_history()
-    assert "已解决" in page.records.item(0).text()
+    assert "Resolved" in page.records.item(0).text()
     page.show_history()
-    click(page, "加入求助报告")
-    assert "本地问题处理记录" in window.diagnostics_markdown
+    click(page, 'Add to Report')
+    assert "Local Problem History" in window.diagnostics_markdown
     window.resize(780, 650)
     application.processEvents()
     window.close()
@@ -122,13 +122,13 @@ def test_worker_cancel_failure_and_long_results_remain_responsive(tmp_path):
     def waiting(cancel, progress):
         progress(10, "等待模拟查询")
         if cancel.wait(2):
-            raise InterruptedError("检查已取消")
+            raise InterruptedError("Check cancelled")
         return "unexpected"
     page.run_task(waiting, "test")
     QTest.qWait(30)
     page.cancel_task()
     await_idle(page)
-    assert "取消" in page.status.text()
+    assert 'cancelled' in page.status.text()
     long_text = "可完整复制的虚构证据" * 2000
     page.run_task(lambda c, p: long_text, "test")
     await_idle(page)
@@ -144,7 +144,7 @@ def test_software_peripheral_timeline_real_buttons_use_worker(tmp_path, monkeypa
     monkeypatch.setattr(module, "analyze_software", lambda *a: Investigation("模拟软件结果"))
     monkeypatch.setattr(module, "inspect_peripherals", lambda *a: Investigation("模拟外设结果"))
     monkeypatch.setattr(module, "collect_timeline", lambda *a: Investigation("模拟时间线结果"))
-    for button, title in (("开始软件专项检查", "模拟软件结果"), ("检查所选外设", "模拟外设结果"), ("生成故障时间线", "模拟时间线结果")):
+    for button, title in (("Run Software Checks", "模拟软件结果"), ("Check Selected Device Type", "模拟外设结果"), ("Build Troubleshooting Timeline", "模拟时间线结果")):
         # Bluetooth avoids opening/playing any audio device during this test.
         page.peripheral.setCurrentText("蓝牙")
         click(page, button)
@@ -182,10 +182,10 @@ def test_monitor_actual_resource_sampling_mark_stop_and_persist(tmp_path):
     while page.monitor_thread is not None and time.monotonic() < deadline:
         QTest.qWait(10)
     assert page.monitor_thread is None
-    assert "监测已停止" in page.monitor_status.text()
+    assert 'Monitoring stopped' in page.monitor_status.text()
     assert "incidents" in page.report
     assert not page.monitor_buffer.incidents[0]["complete"]
-    assert page.history.list_records()[0]["kind"] == "监测"
+    assert page.history.list_records()[0]["kind"] == 'Monitoring'
     page.close()
 
 

@@ -49,4 +49,4 @@ def test_expired_elevation_request_is_rejected(tmp_path: Path) -> None:
     payload["hmac"] = _sign({key: value for key, value in payload.items() if key != "hmac"}, secret)
     request.write_text(json.dumps(payload), encoding="utf-8")
     assert run_elevated_helper(str(request), secret, store) != 0
-    assert "过期" in json.loads(result.read_text(encoding="utf-8"))["error"]
+    assert 'expired' in json.loads(result.read_text(encoding="utf-8"))["error"]

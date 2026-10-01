@@ -3,7 +3,6 @@ from __future__ import annotations
 from PySide6.QtCore import QRect, Qt
 from PySide6.QtGui import QColor, QImage, QImageReader, QPainter, QPen
 from PySide6.QtWidgets import (
-    QComboBox,
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -11,6 +10,10 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from helppack.english import text as msg
+
+from .localized_widgets import ChoiceBox
 
 
 class ImageCanvas(QWidget):
@@ -61,9 +64,9 @@ class ImageCanvas(QWidget):
 
     def apply_rect(self, rect: QRect, mode: str):
         if rect.isEmpty() or not self.image.rect().contains(rect):
-            raise ValueError("请在图片内拖动选择有效区域")
+            raise ValueError(msg('请在图片内拖动选择有效区域'))
         if mode not in {"遮挡", "裁剪"}:
-            raise ValueError("编辑类型无效")
+            raise ValueError(msg('编辑类型无效'))
         self.undo_images.append(self.image.copy())
         self.undo_images = self.undo_images[-5:]
         if mode == "裁剪":
@@ -88,29 +91,29 @@ class ScreenshotEditor(QDialog):
         reader = QImageReader(str(path))
         size = reader.size()
         if size.width() <= 0 or size.height() <= 0 or size.width() * size.height() > 20000000:
-            raise ValueError("图片无法读取或超过 2000 万像素编辑上限")
+            raise ValueError(msg('图片无法读取或超过 2000 万像素编辑上限'))
         image = reader.read().convertToFormat(QImage.Format.Format_ARGB32)
         if image.isNull():
-            raise ValueError("图片格式或内容无效")
-        self.setWindowTitle("截图裁剪与手动遮挡 · 原图不改变")
+            raise ValueError(msg('图片格式或内容无效'))
+        self.setWindowTitle(msg('截图裁剪与手动遮挡 · 原图不改变'))
         self.resize(850, 650)
         layout = QVBoxLayout(self)
-        hint = QLabel("在图中拖动选择区域，再点击应用。遮挡使用不透明黑色；请检查所有敏感区域，导出只用处理后的 PNG 副本。")
+        hint = QLabel(msg('在图中拖动选择区域，再点击应用。遮挡使用不透明黑色；请检查所有敏感区域，导出只用处理后的 PNG 副本。'))
         hint.setWordWrap(True)
         layout.addWidget(hint)
         self.canvas = ImageCanvas(image)
         layout.addWidget(self.canvas, 1)
         row = QHBoxLayout()
-        self.mode = QComboBox()
+        self.mode = ChoiceBox()
         self.mode.addItems(["遮挡", "裁剪"])
         row.addWidget(self.mode)
-        apply = QPushButton("应用选区")
+        apply = QPushButton(msg('应用选区'))
         apply.clicked.connect(self.apply)
-        undo = QPushButton("撤销")
+        undo = QPushButton(msg('撤销'))
         undo.clicked.connect(self.canvas.undo)
-        save = QPushButton("使用处理后的副本")
+        save = QPushButton(msg('使用处理后的副本'))
         save.clicked.connect(self.accept)
-        cancel = QPushButton("取消")
+        cancel = QPushButton(msg('取消'))
         cancel.clicked.connect(self.reject)
         for button in (apply, undo, save, cancel):
             row.addWidget(button)
@@ -121,6 +124,6 @@ class ScreenshotEditor(QDialog):
     def apply(self):
         try:
             self.canvas.apply_rect(self.canvas.image_rect(), self.mode.currentText())
-            self.message.setText("已应用；原图未修改。")
+            self.message.setText(msg('已应用；原图未修改。'))
         except ValueError as exc:
             self.message.setText(str(exc))

@@ -14,6 +14,9 @@ from typing import Any, ClassVar
 
 import psutil
 
+from helppack.english import label as display_label
+from helppack.english import text as msg
+
 from ..redaction import redact_text
 from .engine import ScanContext
 from .models import (
@@ -60,7 +63,7 @@ def _result(
 
 class PerformanceCheck:
     check_id = "performance.resources"
-    display_name = "资源占用与高占用进程（2 秒采样）"
+    display_name = msg('资源占用与高占用进程（2 秒采样）')
     categories = frozenset({"系统卡顿"})
 
     def run(self, context: ScanContext) -> list[DiagnosticResult]:
@@ -91,7 +94,7 @@ class PerformanceCheck:
             except (psutil.Error, OSError):
                 continue
         top.sort(reverse=True)
-        top_text = "；".join(f"{name} (PID {pid}) CPU {value:.1f}% / 内存 {rss:.0f} MB" for value, name, pid, rss in top[:8]) or "没有可读取的进程样本"
+        top_text = "；".join(msg('{0} (PID {1}) CPU {2:.1f}% / 内存 {3:.0f} MB', name, pid, value, rss) for value, name, pid, rss in top[:8]) or msg('没有可读取的进程样本')
         sent = max(0, net_after.bytes_sent - net_before.bytes_sent)
         received = max(0, net_after.bytes_recv - net_before.bytes_recv)
         disk_read = max(0, (disk_after.read_bytes if disk_after else 0) - (disk_before.read_bytes if disk_before else 0))
@@ -100,25 +103,25 @@ class PerformanceCheck:
         status = DiagnosticStatus.NOTICE if cpu >= 90 or memory.percent >= 90 else DiagnosticStatus.NORMAL
         severity = Severity.MEDIUM if status == DiagnosticStatus.NOTICE else Severity.INFO
         evidence = [
-            Evidence("采样时长", f"{sample_seconds:.1f} 秒"),
-            Evidence("CPU 平均占用", f"{cpu:.1f}%"),
-            Evidence("内存占用", f"{memory.percent:.1f}%（可用 {memory.available / 1024**3:.1f} GB）"),
-            Evidence("分页使用", f"{swap.percent:.1f}%"),
-            Evidence("采样期网络流量", f"发送 {sent / 1024:.1f} KB，接收 {received / 1024:.1f} KB"),
-            Evidence("采样期磁盘活动", f"读取 {disk_read / 1024:.1f} KB，写入 {disk_write / 1024:.1f} KB"),
-            Evidence("系统运行时间", f"{uptime_seconds / 3600:.1f} 小时"),
-            Evidence("高占用进程样本", top_text),
+            Evidence(msg('采样时长'), msg('{0:.1f} 秒', sample_seconds)),
+            Evidence(msg('CPU 平均占用'), f"{cpu:.1f}%"),
+            Evidence(msg('内存占用'), msg('{0:.1f}%（可用 {1:.1f} GB）', memory.percent, memory.available / 1024 ** 3)),
+            Evidence(msg('分页使用'), f"{swap.percent:.1f}%"),
+            Evidence(msg('采样期网络流量'), msg('发送 {0:.1f} KB，接收 {1:.1f} KB', sent / 1024, received / 1024)),
+            Evidence(msg('采样期磁盘活动'), msg('读取 {0:.1f} KB，写入 {1:.1f} KB', disk_read / 1024, disk_write / 1024)),
+            Evidence(msg('系统运行时间'), msg('{0:.1f} 小时', uptime_seconds / 3600)),
+            Evidence(msg('高占用进程样本'), top_text),
         ]
         return [_result(
             self.check_id, "系统卡顿", self.display_name, status, evidence,
-            "这是短时间采样，只能反映扫描期间的状态；单个进程短暂升高不等于它就是故障原因。",
-            ["问题出现时可再次扫描，对比多次结果。"], severity=severity, confidence="中（短时采样）"
+            msg('这是短时间采样，只能反映扫描期间的状态；单个进程短暂升高不等于它就是故障原因。'),
+            [msg('问题出现时可再次扫描，对比多次结果。')], severity=severity, confidence=msg('中（短时采样）')
         )]
 
 
 class DiskAndTempCheck:
     check_id = "performance.storage"
-    display_name = "磁盘空间与临时目录"
+    display_name = msg('磁盘空间与临时目录')
     categories = frozenset({"系统卡顿", "软件或浏览器异常", "Windows更新问题", "电池或磁盘健康"})
 
     def run(self, context: ScanContext) -> list[DiagnosticResult]:
@@ -132,7 +135,7 @@ class DiskAndTempCheck:
                 continue
             free_gb = usage.free / 1024**3
             free_percent = 100 - usage.percent
-            rows.append(f"{part.device or part.mountpoint}：剩余 {free_gb:.1f} GB（{free_percent:.1f}%）")
+            rows.append(msg('{0}：剩余 {1:.1f} GB（{2:.1f}%）', part.device or part.mountpoint, free_gb, free_percent))
             if os.environ.get("SystemDrive", "C:").upper() in part.mountpoint.upper() and (free_gb < 15 or free_percent < 10):
                 low = True
         temp_evidence = []
@@ -142,16 +145,16 @@ class DiskAndTempCheck:
         status = DiagnosticStatus.NOTICE if low else DiagnosticStatus.NORMAL
         return [_result(
             self.check_id, "系统卡顿", self.display_name, status,
-            [Evidence("磁盘剩余空间", "\n".join(rows) or "没有可读取的分区"), Evidence("临时目录估算", "\n".join(temp_evidence) or "数据不可用")],
-            "空间阈值用于提醒；空间偏低可能影响更新、缓存和分页，但不能单独证明是当前故障原因。",
-            ["系统盘空间偏低时，优先使用 Windows“存储”设置检查可清理内容。"] if low else ["当前未发现明显的系统盘低空间提醒。"],
-            severity=Severity.MEDIUM if low else Severity.INFO, confidence="高（容量）；中（临时目录估算）"
+            [Evidence(msg('磁盘剩余空间'), "\n".join(rows) or msg('没有可读取的分区')), Evidence(msg('临时目录估算'), "\n".join(temp_evidence) or msg('数据不可用'))],
+            msg('空间阈值用于提醒；空间偏低可能影响更新、缓存和分页，但不能单独证明是当前故障原因。'),
+            [msg('系统盘空间偏低时，优先使用 Windows“存储”设置检查可清理内容。')] if low else [msg('当前未发现明显的系统盘低空间提醒。')],
+            severity=Severity.MEDIUM if low else Severity.INFO, confidence=msg('高（容量）；中（临时目录估算）')
         )]
 
 
 class StartupCheck:
     check_id = "startup.entries"
-    display_name = "启动项、启动文件夹和自动服务"
+    display_name = msg('启动项、启动文件夹和自动服务')
     categories = frozenset({"系统卡顿"})
 
     def run(self, context: ScanContext) -> list[DiagnosticResult]:
@@ -174,21 +177,21 @@ class StartupCheck:
         except (AttributeError, OSError):
             services = []
         evidence = [
-            Evidence("注册表启动项", "；".join(entries) if entries else "未发现可读取的条目"),
-            Evidence("启动文件夹", "；".join(folders) if folders else "未发现文件"),
-            Evidence("自动启动服务", "；".join(services[:30]) if services else "未发现可读取的第三方条目"),
+            Evidence(msg('注册表启动项'), "；".join(entries) if entries else msg('未发现可读取的条目')),
+            Evidence(msg('启动文件夹'), "；".join(folders) if folders else msg('未发现文件')),
+            Evidence(msg('自动启动服务'), "；".join(services[:30]) if services else msg('未发现可读取的第三方条目')),
         ]
         return [_result(
             self.check_id, "系统卡顿", self.display_name, DiagnosticStatus.NORMAL, evidence,
-            "发现启动项只说明它可能随登录或开机运行，不代表它有害或导致卡顿。",
-            ["如需减少启动项，只选择你明确认识且不需要自动运行的用户启动项。"],
-            confidence="高（枚举结果）；低（与故障的因果关系）", repairs=repairs
+            msg('发现启动项只说明它可能随登录或开机运行，不代表它有害或导致卡顿。'),
+            [msg('如需减少启动项，只选择你明确认识且不需要自动运行的用户启动项。')],
+            confidence=msg('高（枚举结果）；低（与故障的因果关系）'), repairs=repairs
         )]
 
 
 class ScheduledTaskCheck:
     check_id = "startup.scheduled_tasks"
-    display_name = "登录或开机计划任务"
+    display_name = msg('登录或开机计划任务')
     categories = frozenset({"系统卡顿"})
 
     def run(self, context: ScanContext) -> list[DiagnosticResult]:
@@ -197,12 +200,12 @@ class ScheduledTaskCheck:
             "Select-Object -First 60 TaskName,TaskPath,State | ConvertTo-Json -Compress"
         )
         command = context.runner.powershell_json(script, timeout=15)
-        return [_command_json_result(command, self.check_id, "系统卡顿", self.display_name, "计划任务", "计划任务存在不代表异常；部分系统任务不会在普通权限下完整显示。")]
+        return [_command_json_result(command, self.check_id, "系统卡顿", self.display_name, msg('计划任务'), msg('计划任务存在不代表异常；部分系统任务不会在普通权限下完整显示。'))]
 
 
 class BrowserCheck:
     check_id = "software.browser"
-    display_name = "常见浏览器状态"
+    display_name = msg('常见浏览器状态')
     categories = frozenset({"软件或浏览器异常"})
 
     def run(self, context: ScanContext) -> list[DiagnosticResult]:
@@ -216,20 +219,20 @@ class BrowserCheck:
                     running[names[key]] += 1
             except (psutil.Error, OSError):
                 continue
-        text = "；".join(f"{name}：{count} 个进程" for name, count in running.items())
+        text = "；".join(msg('{0}：{1} 个进程', name, count) for name, count in running.items())
         versions = _browser_versions()
         locks = _browser_lock_markers()
         return [_result(
             self.check_id, "软件或浏览器异常", self.display_name, DiagnosticStatus.NORMAL,
-            [Evidence("已安装版本", "；".join(versions) if versions else "未从卸载注册表识别到常见浏览器"), Evidence("运行中的浏览器", text), Evidence("配置锁标记", "；".join(locks) if locks else "未发现已知锁标记")],
-            "多进程是现代浏览器的正常设计；检测到进程或锁标记不能单独证明进程残留或配置损坏。",
-            ["如浏览器无法退出，可在任务管理器中确认窗口已关闭后再检查残留进程。"], confidence="高（进程计数）；低（故障判断）"
+            [Evidence(msg('已安装版本'), "；".join(versions) if versions else msg('未从卸载注册表识别到常见浏览器')), Evidence(msg('运行中的浏览器'), text), Evidence(msg('配置锁标记'), "；".join(locks) if locks else msg('未发现已知锁标记'))],
+            msg('多进程是现代浏览器的正常设计；检测到进程或锁标记不能单独证明进程残留或配置损坏。'),
+            [msg('如浏览器无法退出，可在任务管理器中确认窗口已关闭后再检查残留进程。')], confidence=msg('高（进程计数）；低（故障判断）')
         )]
 
 
 class CrashEventCheck:
     check_id = "software.crash_events"
-    display_name = "最近的应用崩溃与 WER 事件"
+    display_name = msg('最近的应用崩溃与 WER 事件')
     categories = frozenset({"软件或浏览器异常"})
 
     def run(self, context: ScanContext) -> list[DiagnosticResult]:
@@ -238,14 +241,14 @@ class CrashEventCheck:
             "-MaxEvents 30 -ErrorAction Stop | Select-Object TimeCreated,Id,ProviderName,LevelDisplayName,Message | ConvertTo-Json -Depth 3 -Compress"
         )
         command = context.runner.powershell_json(script, timeout=20)
-        result = _command_json_result(command, self.check_id, "软件或浏览器异常", self.display_name, "最近事件", "事件日志是排查证据；崩溃模块或单条事件不能单独证明根本原因。")
-        result.evidence.append(Evidence("WER 记录元数据", _wer_metadata()))
+        result = _command_json_result(command, self.check_id, "软件或浏览器异常", self.display_name, msg('最近事件'), msg('事件日志是排查证据；崩溃模块或单条事件不能单独证明根本原因。'))
+        result.evidence.append(Evidence(msg('WER 记录元数据'), _wer_metadata()))
         return [result]
 
 
 class NetworkCheck:
     check_id = "network.connectivity"
-    display_name = "网络配置、DNS 与 HTTPS"
+    display_name = msg('网络配置、DNS 与 HTTPS')
     categories = frozenset({"网络或Wi-Fi异常", "软件或浏览器异常", "Microsoft Store 问题"})
 
     def run(self, context: ScanContext) -> list[DiagnosticResult]:
@@ -253,51 +256,51 @@ class NetworkCheck:
         stats = psutil.net_if_stats()
         for name, addresses in psutil.net_if_addrs().items():
             context.ensure_not_cancelled()
-            state = "已连接" if stats.get(name) and stats[name].isup else "未连接"
+            state = msg('已连接') if stats.get(name) and stats[name].isup else msg('未连接')
             values = [item.address for item in addresses if item.family in (socket.AF_INET, socket.AF_INET6)]
-            interfaces.append(f"{name}：{state}，地址 {'、'.join(values) if values else '无'}")
+            interfaces.append(msg('{0}：{1}，地址 {2}', name, state, '、'.join(values) if values else msg('无')))
         dns = "正常"
         https = "正常"
         try:
             socket.getaddrinfo("www.microsoft.com", 443, type=socket.SOCK_STREAM)
         except OSError as exc:
-            dns = f"失败（{type(exc).__name__}）"
+            dns = msg('失败（{0}）', type(exc).__name__)
         context.ensure_not_cancelled()
         try:
             request = urllib.request.Request("https://www.microsoft.com/", method="HEAD", headers={"User-Agent": "HelpPack/0.2"})
             with urllib.request.urlopen(request, timeout=6, context=ssl.create_default_context()) as response:
-                https = f"成功（HTTP {response.status}）"
+                https = msg('成功（HTTP {0}）', response.status)
         except (OSError, TimeoutError, ValueError, ssl.SSLError, urllib.error.URLError) as exc:
-            https = f"失败（{type(exc).__name__}）"
-        status = DiagnosticStatus.NORMAL if dns == "正常" and https.startswith("成功") else DiagnosticStatus.NOTICE
-        raw_interfaces = "\n".join(interfaces) or "没有网络接口数据"
+            https = msg('失败（{0}）', type(exc).__name__)
+        status = DiagnosticStatus.NORMAL if dns == "正常" and https.startswith(msg('成功')) else DiagnosticStatus.NOTICE
+        raw_interfaces = "\n".join(interfaces) or msg('没有网络接口数据')
         repairs: list[RepairSuggestion] = []
         if dns != "正常":
             repairs.append(RepairSuggestion(
                 action_id="flush_dns_cache",
-                display_name="清除 DNS 客户端缓存",
+                display_name=msg('清除 DNS 客户端缓存'),
                 target={},
                 safety_level=SafetyLevel.L1,
                 requires_admin=False,
-                impact="只清除本机缓存的域名解析结果，不会更改 DNS 服务器。",
-                operation_preview="运行 Windows 内置 ipconfig /flushdns，并重新解析两个测试域名",
-                rollback="无需回滚；后续解析会重新写入缓存。",
+                impact=msg('只清除本机缓存的域名解析结果，不会更改 DNS 服务器。'),
+                operation_preview=msg('运行 Windows 内置 ipconfig /flushdns，并重新解析两个测试域名'),
+                rollback=msg('无需回滚；后续解析会重新写入缓存。'),
                 rollback_capability=RollbackCapability.NONE,
                 evidence_ids=[self.check_id],
                 estimated_seconds=20,
             ))
         return [_result(
             self.check_id, "网络或Wi-Fi异常", self.display_name, status,
-            [Evidence("网络接口", redact_text(raw_interfaces)), Evidence("DNS 解析", dns), Evidence("HTTPS 连接", https)],
-            "DNS 和 HTTPS 分别测试，任一失败都只代表本次指定目标测试失败，不等同于整个互联网不可用。",
-            ["结合适配器、代理、DNS 和系统时间结果继续排查。"], severity=Severity.MEDIUM if status == DiagnosticStatus.NOTICE else Severity.INFO,
-            confidence="中（单次连接测试）", repairs=repairs
+            [Evidence(msg('网络接口'), redact_text(raw_interfaces)), Evidence(msg('DNS 解析'), display_label(dns)), Evidence(msg('HTTPS 连接'), display_label(https))],
+            msg('DNS 和 HTTPS 分别测试，任一失败都只代表本次指定目标测试失败，不等同于整个互联网不可用。'),
+            [msg('结合适配器、代理、DNS 和系统时间结果继续排查。')], severity=Severity.MEDIUM if status == DiagnosticStatus.NOTICE else Severity.INFO,
+            confidence=msg('中（单次连接测试）'), repairs=repairs
         )]
 
 
 class ProxyHostsCheck:
     check_id = "network.proxy_hosts"
-    display_name = "当前用户代理、PAC 与 Hosts"
+    display_name = msg('当前用户代理、PAC 与 Hosts')
     categories = frozenset({"网络或Wi-Fi异常", "软件或浏览器异常", "Microsoft Store 问题"})
 
     def run(self, context: ScanContext) -> list[DiagnosticResult]:
@@ -312,29 +315,29 @@ class ProxyHostsCheck:
                 if stripped and not stripped.startswith("#"):
                     redirects.append(stripped)
         except PermissionError:
-            return [_result(self.check_id, "网络或Wi-Fi异常", self.display_name, DiagnosticStatus.PERMISSION_DENIED, [Evidence("Hosts", "权限不足")], "无法读取 Hosts 文件。", ["可由管理员人工检查。"], confidence="高")]
+            return [_result(self.check_id, "网络或Wi-Fi异常", self.display_name, DiagnosticStatus.PERMISSION_DENIED, [Evidence("Hosts", display_label("权限不足"))], msg('无法读取 Hosts 文件。'), [msg('可由管理员人工检查。')], confidence="高")]
         suspicious = [line for line in redirects if "localhost" not in line.lower()]
         status = DiagnosticStatus.NOTICE if proxy["enabled"] or proxy["pac"] or suspicious else DiagnosticStatus.NORMAL
         evidence = [
-            Evidence("用户代理", proxy["display"]),
-            Evidence("PAC", proxy["pac"] or "未配置"),
-            Evidence("WinHTTP 默认代理", _winhttp_proxy()),
-            Evidence("Hosts 非默认重定向", redact_text("\n".join(suspicious[:30])) if suspicious else "未发现"),
+            Evidence(msg('用户代理'), proxy["display"]),
+            Evidence("PAC", proxy["pac"] or msg('未配置')),
+            Evidence(msg('WinHTTP 默认代理'), _winhttp_proxy()),
+            Evidence(msg('Hosts 非默认重定向'), redact_text("\n".join(suspicious[:30])) if suspicious else msg('未发现')),
         ]
         return [_result(
             self.check_id, "网络或Wi-Fi异常", self.display_name, status, evidence,
-            "代理、PAC 或 Hosts 自定义记录可能完全合法；这里只提示配置存在，不判定为恶意或故障。",
-            ["确认这些配置是否由你、单位网络或可信软件设置。"], severity=Severity.LOW if status == DiagnosticStatus.NOTICE else Severity.INFO,
-            confidence="高（配置存在性）；低（是否异常）", repairs=repairs
+            msg('代理、PAC 或 Hosts 自定义记录可能完全合法；这里只提示配置存在，不判定为恶意或故障。'),
+            [msg('确认这些配置是否由你、单位网络或可信软件设置。')], severity=Severity.LOW if status == DiagnosticStatus.NOTICE else Severity.INFO,
+            confidence=msg('高（配置存在性）；低（是否异常）'), repairs=repairs
         )]
 
 
 class DeviceServiceCheck:
     check_id = "devices.services"
-    display_name = "音频、蓝牙与打印服务"
+    display_name = msg('音频、蓝牙与打印服务')
     categories = frozenset({"声音问题", "蓝牙问题", "打印机问题"})
 
-    SERVICE_MAP: ClassVar[dict[str, str]] = {"Audiosrv": "Windows 音频", "AudioEndpointBuilder": "音频终结点", "bthserv": "蓝牙支持", "Spooler": "打印后台处理"}
+    SERVICE_MAP: ClassVar[dict[str, str]] = {"Audiosrv": msg('Windows 音频'), "AudioEndpointBuilder": msg('音频终结点'), "bthserv": msg('蓝牙支持'), "Spooler": msg('打印后台处理')}
 
     def run(self, context: ScanContext) -> list[DiagnosticResult]:
         if platform.system() != "Windows" or not hasattr(psutil, "win_service_get"):
@@ -349,20 +352,20 @@ class DeviceServiceCheck:
                 if state != "running":
                     stopped.append(display)
             except psutil.NoSuchProcess:
-                rows.append(f"{display}：系统未提供此服务")
+                rows.append(msg('{0}：系统未提供此服务', display))
             except psutil.AccessDenied:
-                rows.append(f"{display}：权限不足")
+                rows.append(msg('{0}：权限不足', display))
         status = DiagnosticStatus.NOTICE if stopped else DiagnosticStatus.NORMAL
         return [_result(
-            self.check_id, "设备", self.display_name, status, [Evidence("服务状态", "；".join(rows))],
-            "服务未运行可能与设备不可用有关，但也可能是按需启动或该硬件不存在。",
-            ["在对应 Windows 设置页确认设备存在、已启用且被选为输出或目标设备。"], confidence="中"
+            self.check_id, msg('设备'), self.display_name, status, [Evidence(msg('服务状态'), "；".join(rows))],
+            msg('服务未运行可能与设备不可用有关，但也可能是按需启动或该硬件不存在。'),
+            [msg('在对应 Windows 设置页确认设备存在、已启用且被选为输出或目标设备。')], confidence="中"
         )]
 
 
 class PnpDeviceCheck:
     check_id = "devices.pnp"
-    display_name = "PnP 设备状态"
+    display_name = msg('PnP 设备状态')
     categories = frozenset({"声音问题", "蓝牙问题", "打印机问题"})
 
     def run(self, context: ScanContext) -> list[DiagnosticResult]:
@@ -371,12 +374,12 @@ class PnpDeviceCheck:
             "Where-Object { $classes -contains $_.Class } | Select-Object -First 80 Class,FriendlyName,Status,Problem | ConvertTo-Json -Compress"
         )
         command = context.runner.powershell_json(script, timeout=20)
-        return [_command_json_result(command, self.check_id, "设备", self.display_name, "设备", "设备状态或错误码是证据；驱动日期较旧本身不能证明驱动故障。")]
+        return [_command_json_result(command, self.check_id, msg('设备'), self.display_name, msg('设备'), msg('设备状态或错误码是证据；驱动日期较旧本身不能证明驱动故障。'))]
 
 
 class UpdateCheck:
     check_id = "windows_update.basic"
-    display_name = "Windows Update 基础状态"
+    display_name = msg('Windows Update 基础状态')
     categories = frozenset({"Windows更新问题"})
 
     def run(self, context: ScanContext) -> list[DiagnosticResult]:
@@ -387,20 +390,20 @@ class UpdateCheck:
                     info = psutil.win_service_get(name).as_dict()
                     services.append(f"{name}：{info.get('status', 'unknown')} / {info.get('start_type', 'unknown')}")
                 except psutil.Error:
-                    services.append(f"{name}：无法读取")
+                    services.append(msg('{0}：无法读取', name))
         pending = _pending_reboot()
         status = DiagnosticStatus.NOTICE if pending else DiagnosticStatus.NORMAL
         return [_result(
             self.check_id, "Windows更新问题", self.display_name, status,
-            [Evidence("更新相关服务", "；".join(services) or "不支持"), Evidence("等待重启标记", "存在" if pending else "未发现已知标记")],
-            "这里只检查基础服务和已知重启标记，不会安装更新，也没有运行 SFC 或 DISM。",
-            ["如更新持续失败，可记录错误代码后使用 Windows Update 设置或官方支持渠道。"], confidence="中"
+            [Evidence(msg('更新相关服务'), "；".join(services) or display_label("不支持")), Evidence(msg('等待重启标记'), msg('存在') if pending else msg('未发现已知标记'))],
+            msg('这里只检查基础服务和已知重启标记，不会安装更新，也没有运行 SFC 或 DISM。'),
+            [msg('如更新持续失败，可记录错误代码后使用 Windows Update 设置或官方支持渠道。')], confidence="中"
         )]
 
 
 class NetworkConfigurationCheck:
     check_id = "network.configuration"
-    display_name = "DHCP、默认网关、DNS 服务器与 Wi-Fi 适配器"
+    display_name = msg('DHCP、默认网关、DNS 服务器与 Wi-Fi 适配器')
     categories = frozenset({"网络或Wi-Fi异常"})
 
     def run(self, context: ScanContext) -> list[DiagnosticResult]:
@@ -414,16 +417,16 @@ class NetworkConfigurationCheck:
         )
         command = context.runner.powershell_json(script, timeout=20)
         result = _command_json_result(
-            command, self.check_id, "网络或Wi-Fi异常", self.display_name, "结构化网络配置",
-            "配置存在不等于异常；Wi-Fi 名称不写入报告，网关、DNS 和接口地址会自动脱敏。"
+            command, self.check_id, "网络或Wi-Fi异常", self.display_name, msg('结构化网络配置'),
+            msg('配置存在不等于异常；Wi-Fi 名称不写入报告，网关、DNS 和接口地址会自动脱敏。')
         )
-        result.evidence.append(Evidence("系统时间", datetime.now().astimezone().isoformat(timespec="seconds")))
+        result.evidence.append(Evidence(msg('系统时间'), datetime.now().astimezone().isoformat(timespec="seconds")))
         return [result]
 
 
 class PrinterCheck:
     check_id = "devices.printers"
-    display_name = "打印机、默认打印机与队列"
+    display_name = msg('打印机、默认打印机与队列')
     categories = frozenset({"打印机问题"})
 
     def run(self, context: ScanContext) -> list[DiagnosticResult]:
@@ -434,14 +437,14 @@ class PrinterCheck:
             "PrinterStatus=$_.PrinterStatus;QueueCount=$count} }; $items | ConvertTo-Json -Compress"
         )
         command = context.runner.powershell_json(script, timeout=20)
-        result = _command_json_result(command, self.check_id, "打印机问题", self.display_name, "已安装打印机", "队列数量是当前快照；不会自动取消任何打印任务。")
-        result.evidence.append(Evidence("默认打印机", _default_printer()))
+        result = _command_json_result(command, self.check_id, "打印机问题", self.display_name, msg('已安装打印机'), msg('队列数量是当前快照；不会自动取消任何打印任务。'))
+        result.evidence.append(Evidence(msg('默认打印机'), _default_printer()))
         return [result]
 
 
 class UpdateHistoryCheck:
     check_id = "windows_update.history"
-    display_name = "最近更新记录、失败代码与日志能力"
+    display_name = msg('最近更新记录、失败代码与日志能力')
     categories = frozenset({"Windows更新问题"})
 
     def run(self, context: ScanContext) -> list[DiagnosticResult]:
@@ -451,29 +454,29 @@ class UpdateHistoryCheck:
             "Select-Object TimeCreated,Id,LevelDisplayName,Message | ConvertTo-Json -Depth 3 -Compress"
         )
         command = context.runner.powershell_json(script, timeout=20)
-        result = _command_json_result(command, self.check_id, "Windows更新问题", self.display_name, "更新事件", "事件记录可包含成功和失败；事件存在不等于当前更新仍失败。")
+        result = _command_json_result(command, self.check_id, "Windows更新问题", self.display_name, msg('更新事件'), msg('事件记录可包含成功和失败；事件存在不等于当前更新仍失败。'))
         windir = Path(os.environ.get("WINDIR", r"C:\Windows"))
         logs = []
         for name in ("Logs/CBS/CBS.log", "Logs/DISM/dism.log", "WindowsUpdate.log"):
             path = windir / name
             try:
-                logs.append(f"{path.name}：{'可读' if path.is_file() and os.access(path, os.R_OK) else '不存在或不可读'}")
+                logs.append(f"{path.name}：{msg('可读') if path.is_file() and os.access(path, os.R_OK) else msg('不存在或不可读')}")
             except OSError:
-                logs.append(f"{path.name}：无法检查")
+                logs.append(msg('{0}：无法检查', path.name))
         result.evidence.extend(
             [
-                Evidence("日志读取能力", "；".join(logs)),
-                Evidence("SFC 只读验证能力", "命令可用（未执行）" if shutil.which("sfc.exe") else "命令不可用"),
-                Evidence("DISM 扫描能力", "命令可用（未执行）" if shutil.which("dism.exe") else "命令不可用"),
+                Evidence(msg('日志读取能力'), "；".join(logs)),
+                Evidence(msg('SFC 只读验证能力'), msg('命令可用（未执行）') if shutil.which("sfc.exe") else msg('命令不可用')),
+                Evidence(msg('DISM 扫描能力'), msg('命令可用（未执行）') if shutil.which("dism.exe") else msg('命令不可用')),
             ]
         )
-        result.recommendations.append("发布前验证没有运行 sfc /verifyonly 或 DISM /ScanHealth，避免未经确认的长时间扫描。")
+        result.recommendations.append(msg('发布前验证没有运行 sfc /verifyonly 或 DISM /ScanHealth，避免未经确认的长时间扫描。'))
         return [result]
 
 
 class ReliabilityCheck:
     check_id = "reliability.events"
-    display_name = "蓝屏、异常关机与硬件错误事件"
+    display_name = msg('蓝屏、异常关机与硬件错误事件')
     categories = frozenset({"蓝屏或异常重启"})
 
     def run(self, context: ScanContext) -> list[DiagnosticResult]:
@@ -482,32 +485,32 @@ class ReliabilityCheck:
             "-MaxEvents 40 -ErrorAction Stop | Select-Object TimeCreated,Id,ProviderName,LevelDisplayName,Message | ConvertTo-Json -Depth 3 -Compress"
         )
         command = context.runner.powershell_json(script, timeout=20)
-        result = _command_json_result(command, self.check_id, "蓝屏或异常重启", self.display_name, "最近事件", "Kernel-Power 41 只表示系统未正常关机，不等同于已经确认电源故障；事件或模块名也不能单独证明根因。")
+        result = _command_json_result(command, self.check_id, "蓝屏或异常重启", self.display_name, msg('最近事件'), msg('Kernel-Power 41 只表示系统未正常关机，不等同于已经确认电源故障；事件或模块名也不能单独证明根因。'))
         dump_dir = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Minidump"
         try:
             dumps = sorted(dump_dir.glob("*.dmp"), key=lambda item: item.stat().st_mtime, reverse=True)
-            dump_text = f"{len(dumps)} 个；最近：{datetime.fromtimestamp(dumps[0].stat().st_mtime, tz=UTC).astimezone().isoformat(timespec='seconds')}" if dumps else "未发现"
+            dump_text = msg('{0} 个；最近：{1}', len(dumps), datetime.fromtimestamp(dumps[0].stat().st_mtime, tz=UTC).astimezone().isoformat(timespec='seconds')) if dumps else msg('未发现')
         except PermissionError:
-            dump_text = "权限不足"
-        result.evidence.append(Evidence("小型转储", dump_text))
+            dump_text = msg('product.permission_denied')
+        result.evidence.append(Evidence(msg('小型转储'), dump_text))
         return [result]
 
 
 class BatteryDiskHealthCheck:
     check_id = "health.battery_disk"
-    display_name = "电池与磁盘健康摘要"
+    display_name = msg('电池与磁盘健康摘要')
     categories = frozenset({"电池或磁盘健康"})
 
     def run(self, context: ScanContext) -> list[DiagnosticResult]:
         battery = psutil.sensors_battery()
-        battery_text = "未检测到电池" if battery is None else f"电量 {battery.percent:.0f}% / {'接通电源' if battery.power_plugged else '使用电池'}"
+        battery_text = msg('未检测到电池') if battery is None else msg('电量 {0:.0f}% / {1}', battery.percent, msg('接通电源') if battery.power_plugged else msg('使用电池'))
         script = "Get-PhysicalDisk -ErrorAction Stop | Select-Object FriendlyName,MediaType,HealthStatus,OperationalStatus,Size | ConvertTo-Json -Compress"
         command = context.runner.powershell_json(script, timeout=15)
-        disk_result = _command_json_result(command, self.check_id, "电池或磁盘健康", self.display_name, "磁盘", "SMART 或 HealthStatus 显示正常也不能保证磁盘绝对安全；USB、RAID 和部分厂商驱动可能不提供数据。")
-        disk_result.evidence.insert(0, Evidence("电池", battery_text))
-        disk_result.evidence.insert(1, Evidence("电池设计/满充容量与循环次数", "标准 psutil 接口不提供；厂商固件或更高权限接口可用性不确定"))
-        disk_result.evidence.append(Evidence("温度", "当前 Windows 标准接口无法可靠覆盖本机硬件，第一版不支持"))
-        disk_result.recommendations.append("如出现异响、读写错误或健康异常，优先备份重要数据。")
+        disk_result = _command_json_result(command, self.check_id, "电池或磁盘健康", self.display_name, msg('磁盘'), msg('SMART 或 HealthStatus 显示正常也不能保证磁盘绝对安全；USB、RAID 和部分厂商驱动可能不提供数据。'))
+        disk_result.evidence.insert(0, Evidence(msg('电池'), battery_text))
+        disk_result.evidence.insert(1, Evidence(msg('电池设计/满充容量与循环次数'), msg('标准 psutil 接口不提供；厂商固件或更高权限接口可用性不确定')))
+        disk_result.evidence.append(Evidence(msg('温度'), msg('当前 Windows 标准接口无法可靠覆盖本机硬件，第一版不支持')))
+        disk_result.recommendations.append(msg('如出现异响、读写错误或健康异常，优先备份重要数据。'))
         return [disk_result]
 
 
@@ -557,16 +560,16 @@ def _bounded_directory_size(path: Path, context: ScanContext, limit: int = 20_00
             dirs[:] = [name for name in dirs if not (Path(root) / name).is_symlink()]
             for name in files:
                 if count >= limit:
-                    return f"{path.name or path}: 至少 {count} 个文件 / {total / 1024**2:.1f} MB（达到统计上限）"
+                    return msg('{0}: 至少 {1} 个文件 / {2:.1f} MB（达到统计上限）', path.name or path, count, total / 1024 ** 2)
                 try:
                     total += (Path(root) / name).stat().st_size
                     count += 1
                 except (OSError, PermissionError):
                     skipped += 1
     except (OSError, PermissionError):
-        return f"{path.name or path}: 权限不足或不可用"
-    suffix = f"，跳过 {skipped} 项" if skipped else ""
-    return f"{path.name or path}: {count} 个文件 / {total / 1024**2:.1f} MB{suffix}"
+        return msg('{0}: 权限不足或不可用', path.name or path)
+    suffix = msg('，跳过 {0} 项', skipped) if skipped else ""
+    return msg('{0}: {1} 个文件 / {2:.1f} MB{3}', path.name or path, count, total / 1024 ** 2, suffix)
 
 
 def _registry_startup_entries() -> tuple[list[str], list[RepairSuggestion]]:
@@ -581,17 +584,17 @@ def _registry_startup_entries() -> tuple[list[str], list[RepairSuggestion]]:
                 with winreg.OpenKey(hive, path) as key:
                     for index in range(winreg.QueryInfoKey(key)[1]):
                         name, value, _kind = winreg.EnumValue(key, index)
-                        entries.append(f"{hive_name}\\{Path(path).name}\\{name} → {Path(str(value).strip(chr(34))).name or '命令'}")
+                        entries.append(f"{hive_name}\\{Path(path).name}\\{name} → {Path(str(value).strip(chr(34))).name or msg('命令')}")
                         if hive_name == "HKCU":
                             repairs.append(RepairSuggestion(
                                 action_id="disable_hkcu_startup",
-                                display_name=f"禁用用户启动项：{name}",
+                                display_name=msg('禁用用户启动项：{0}', name),
                                 target={"key_path": path, "value_name": name},
                                 safety_level=SafetyLevel.L1,
                                 requires_admin=False,
-                                impact="该程序将不再随当前用户登录自动启动；不会删除程序文件。",
-                                operation_preview=f"备份后删除 HKCU\\{path} 中名为 {name} 的值",
-                                rollback="从 HelpPack 备份恢复原值及注册表类型。",
+                                impact=msg('该程序将不再随当前用户登录自动启动；不会删除程序文件。'),
+                                operation_preview=msg('备份后删除 HKCU\\{0} 中名为 {1} 的值', path, name),
+                                rollback=msg('从 HelpPack 备份恢复原值及注册表类型。'),
                             ))
             except OSError:
                 continue
@@ -619,7 +622,7 @@ def _browser_versions() -> list[str]:
                                 try:
                                     version = str(winreg.QueryValueEx(key, "DisplayVersion")[0])
                                 except OSError:
-                                    version = "版本无法读取"
+                                    version = msg('版本无法读取')
                                 row = f"{name} {version}"
                                 if row not in found:
                                     found.append(row)
@@ -647,7 +650,7 @@ def _browser_lock_markers() -> list[str]:
     for name, paths in candidates.items():
         count = sum(1 for path in paths if path.exists())
         if count:
-            rows.append(f"{name}：发现 {count} 个锁标记")
+            rows.append(msg('{0}：发现 {1} 个锁标记', name, count))
     return rows
 
 
@@ -673,14 +676,14 @@ def _wer_metadata() -> str:
         except (OSError, PermissionError):
             denied += 1
     if count:
-        suffix = "（达到统计上限）" if count >= 200 else ""
-        return f"发现 {count} 条元数据{suffix}；最近时间 {datetime.fromtimestamp(latest, tz=UTC).astimezone().isoformat(timespec='seconds')}"
-    return "权限不足" if denied else "未发现 WER 记录"
+        suffix = msg('（达到统计上限）') if count >= 200 else ""
+        return msg('发现 {0} 条元数据{1}；最近时间 {2}', count, suffix, datetime.fromtimestamp(latest, tz=UTC).astimezone().isoformat(timespec='seconds'))
+    return msg('product.permission_denied') if denied else msg('未发现 WER 记录')
 
 
 def _winhttp_proxy() -> str:
     if platform.system() != "Windows":
-        return "当前系统不支持"
+        return msg('当前系统不支持')
     try:
         import ctypes
         from ctypes import wintypes
@@ -695,7 +698,7 @@ def _winhttp_proxy() -> str:
         function.restype = wintypes.BOOL
         if not function(ctypes.byref(info)):
             error = ctypes.get_last_error()
-            return f"无法读取（错误 {error}）"
+            return msg('无法读取（错误 {0}）', error)
         proxy = ctypes.wstring_at(info.proxy) if info.proxy else ""
         bypass = ctypes.wstring_at(info.bypass) if info.bypass else ""
         try:
@@ -705,24 +708,24 @@ def _winhttp_proxy() -> str:
                 ctypes.windll.kernel32.GlobalFree(info.bypass)
         finally:
             pass
-        access = {0: "系统默认", 1: "直连", 3: "指定代理", 4: "自动代理"}.get(info.access_type, f"类型 {info.access_type}")
-        details = f"{access}；{proxy or '无代理服务器'}；绕过 {bypass or '无'}"
+        access = {0: msg('系统默认'), 1: msg('直连'), 3: msg('指定代理'), 4: msg('自动代理')}.get(info.access_type, msg('类型 {0}', info.access_type))
+        details = msg('{0}；{1}；绕过 {2}', access, proxy or msg('无代理服务器'), bypass or msg('无'))
         return redact_text(details)
     except (AttributeError, OSError, ValueError):
-        return "接口不可用"
+        return msg('接口不可用')
 
 
 def _default_printer() -> str:
     if platform.system() != "Windows":
-        return "当前系统不支持"
+        return msg('当前系统不支持')
     import winreg
 
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows NT\CurrentVersion\Windows") as key:
             value = str(winreg.QueryValueEx(key, "Device")[0])
-            return redact_text(value.split(",", 1)[0] or "未设置")
+            return redact_text(value.split(",", 1)[0] or msg('未设置'))
     except OSError:
-        return "未设置或无法读取"
+        return msg('未设置或无法读取')
 
 
 def _startup_folder_entries() -> list[str]:
@@ -760,15 +763,15 @@ def _read_proxy() -> tuple[dict[str, Any], list[RepairSuggestion]]:
     if enabled or pac:
         repairs.append(RepairSuggestion(
             action_id="reset_user_proxy",
-            display_name="重置当前用户代理和 PAC",
+            display_name=msg('重置当前用户代理和 PAC'),
             target={"key_path": path},
             safety_level=SafetyLevel.L2,
             requires_admin=False,
-            impact="可能立即改变浏览器及部分应用的联网方式；单位网络或代理软件可能因此无法连接。",
-            operation_preview="备份并更新 HKCU Internet Settings 的 ProxyEnable、ProxyServer 和 AutoConfigURL",
-            rollback="从 HelpPack 备份恢复这三个值及其注册表类型。",
+            impact=msg('可能立即改变浏览器及部分应用的联网方式；单位网络或代理软件可能因此无法连接。'),
+            operation_preview=msg('备份并更新 HKCU Internet Settings 的 ProxyEnable、ProxyServer 和 AutoConfigURL'),
+            rollback=msg('从 HelpPack 备份恢复这三个值及其注册表类型。'),
         ))
-    return {"enabled": enabled, "display": f"{'启用' if enabled else '未启用'}；{redact_text(server) if server else '无服务器'}", "pac": redact_text(pac)}, repairs
+    return {"enabled": enabled, "display": f"{msg('启用') if enabled else msg('未启用')}；{redact_text(server) if server else msg('无服务器')}", "pac": redact_text(pac)}, repairs
 
 
 def _pending_reboot() -> bool:
@@ -791,18 +794,18 @@ def _pending_reboot() -> bool:
 
 def _command_json_result(command, check_id: str, category: str, name: str, label: str, limitation: str) -> DiagnosticResult:
     if command.timed_out:
-        return _result(check_id, category, name, DiagnosticStatus.UNKNOWN, [Evidence("检查状态", "超时")], "检查超时，数据不足，无法判断。", ["可稍后重试。"], confidence="高（超时状态）")
+        return _result(check_id, category, name, DiagnosticStatus.UNKNOWN, [Evidence(msg('检查状态'), msg('超时'))], msg('检查超时，数据不足，无法判断。'), [msg('可稍后重试。')], confidence=msg('高（超时状态）'))
     if command.permission_denied:
-        return _result(check_id, category, name, DiagnosticStatus.PERMISSION_DENIED, [Evidence("检查状态", "权限不足")], "当前权限不足，未读取到该数据。", ["如确有需要，可由管理员人工检查。"], confidence="高（权限状态）")
+        return _result(check_id, category, name, DiagnosticStatus.PERMISSION_DENIED, [Evidence(msg('检查状态'), display_label("权限不足"))], msg('当前权限不足，未读取到该数据。'), [msg('如确有需要，可由管理员人工检查。')], confidence=msg('高（权限状态）'))
     if command.unsupported:
-        return _result(check_id, category, name, DiagnosticStatus.UNSUPPORTED, [Evidence("检查状态", "命令或模块不可用")], "当前 Windows 版本或组件不支持此检查。", ["不需要为了此项检查安装未知工具。"], confidence="高（支持状态）")
+        return _result(check_id, category, name, DiagnosticStatus.UNSUPPORTED, [Evidence(msg('检查状态'), msg('命令或模块不可用'))], msg('当前 Windows 版本或组件不支持此检查。'), [msg('不需要为了此项检查安装未知工具。')], confidence=msg('高（支持状态）'))
     if command.returncode != 0:
-        return _result(check_id, category, name, DiagnosticStatus.UNKNOWN, [Evidence("检查状态", f"失败（退出码 {command.returncode}）")], "检查失败，不等同于发现异常。", ["将此状态写入求助包，供技术人员继续判断。"], confidence="高（失败状态）")
+        return _result(check_id, category, name, DiagnosticStatus.UNKNOWN, [Evidence(msg('检查状态'), msg('失败（退出码 {0}）', command.returncode))], msg('检查失败，不等同于发现异常。'), [msg('将此状态写入求助包，供技术人员继续判断。')], confidence=msg('高（失败状态）'))
     try:
         value = command.json_value()
     except (ValueError, TypeError):
-        return _result(check_id, category, name, DiagnosticStatus.UNKNOWN, [Evidence("检查状态", "返回数据格式无法识别")], "系统返回了无法结构化读取的数据；不会解析本地化文本来猜测结果。", ["可稍后重试。"], confidence="高（格式状态）")
+        return _result(check_id, category, name, DiagnosticStatus.UNKNOWN, [Evidence(msg('检查状态'), msg('返回数据格式无法识别'))], msg('系统返回了无法结构化读取的数据；不会解析本地化文本来猜测结果。'), [msg('可稍后重试。')], confidence=msg('高（格式状态）'))
     if not value:
-        return _result(check_id, category, name, DiagnosticStatus.NORMAL, [Evidence(label, "未发现相关记录")], limitation, ["当前没有发现相关证据。"], confidence="中")
+        return _result(check_id, category, name, DiagnosticStatus.NORMAL, [Evidence(label, msg('未发现相关记录'))], limitation, [msg('当前没有发现相关证据。')], confidence="中")
     redacted = redact_text(str(value))
-    return _result(check_id, category, name, DiagnosticStatus.NOTICE, [Evidence(label, redacted[:12000])], limitation, ["展开证据并结合发生时间判断相关性。"], severity=Severity.LOW, confidence="中")
+    return _result(check_id, category, name, DiagnosticStatus.NOTICE, [Evidence(label, redacted[:12000])], limitation, [msg('展开证据并结合发生时间判断相关性。')], severity=Severity.LOW, confidence="中")
