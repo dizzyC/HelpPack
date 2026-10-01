@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+from dataclasses import asdict
 
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
@@ -23,7 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..diagnostics.history import DiagnosticHistoryStore
+from ..diagnostics.history import DiagnosticHistoryStore, compare_summaries
 from ..diagnostics.models import (
     RepairSuggestion,
     SafetyLevel,
@@ -256,6 +257,16 @@ class DiagnosticPage(QWidget):
 
     def _scan_completed(self, summary: ScanSummary) -> None:
         self.summary = summary
+        if getattr(self, "repair_before", None):
+            changes = compare_summaries(self.repair_before, asdict(summary))
+            self.operation_summaries.append("修复前后变化（变化不证明因果）：\n" + "\n".join(changes))
+            self.last_operation_message += "\n" + "\n".join(changes)
+            try:
+                if self.repair_history_id:
+                    self.history.add_operation(self.repair_history_id, {"action": "修复后复检", "changes": changes, "finished_at": summary.finished_at})
+            except (OSError, ValueError, TypeError):
+                self.last_operation_message += "\n前后对比保存失败。"
+            self.repair_before = None
         try:
             self.history.save(summary)
         except OSError:
@@ -409,6 +420,9 @@ class DiagnosticPage(QWidget):
     def _start_repair_worker(self, suggestion: RepairSuggestion, second_confirmation: str | bool) -> None:
         if self.repair_thread is not None and self.repair_thread.isRunning():
             return
+        self.repair_before = asdict(self.summary) if self.summary else None
+        self.repair_history_id = self.history.last_id
+        self.repair_action_id = suggestion.action_id
         self.pages.setCurrentIndex(1)
         self.scan_heading.setText("正在执行单项修复")
         self.phase_changed.emit("本机诊断 · 执行单项修复")
@@ -435,11 +449,22 @@ class DiagnosticPage(QWidget):
         self.last_operation_message = outcome.message + "\n" + outcome.recheck_summary + restart
         from ..redaction import redact_text
         self.operation_summaries.append(redact_text(f"{outcome.action_id}：{self.last_operation_message}"))
+        if self.repair_history_id:
+            try:
+                self.history.add_operation(self.repair_history_id, {"action": outcome.action_id, "executed": outcome.executed, "verified": outcome.verified, "result": self.last_operation_message})
+            except (OSError, ValueError, TypeError):
+                self.last_operation_message += "\n操作记录保存失败，请手动保留结果。"
         QMessageBox.information(self, "操作已完成", self.last_operation_message + "\n现在将重新进行只读检查。")
         self.scan_progress.setRange(0, 100)
         self._recheck_after_repair = True
 
     def _repair_failed(self, message: str) -> None:
+        self.repair_before = None
+        if getattr(self, "repair_history_id", None):
+            try:
+                self.history.add_operation(self.repair_history_id, {"action": self.repair_action_id, "confirmed": True, "verified": False, "result": message})
+            except (OSError, ValueError, TypeError):
+                message += "\n失败记录未能保存。"
         self.scan_progress.setRange(0, 100)
         QMessageBox.warning(self, "修复未完成", f"没有确认修复成功：{message}")
         self.pages.setCurrentIndex(2)

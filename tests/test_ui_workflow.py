@@ -27,7 +27,8 @@ def test_main_help_package_flow_switches_pages_and_edits_preview(tmp_path: Path)
     window = MainWindow()
     window.show()
     _application.processEvents()
-    assert window.stack.count() == 7
+    assert window.stack.count() == 8
+    assert window.investigation_page.tabs.count() == 8
     assert window.stack.currentIndex() == 0
     assert window.findChildren(QScrollArea)
 
