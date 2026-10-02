@@ -206,3 +206,7 @@ manifest 不保存截图的原始绝对路径。默认文件名为 `HelpPack_yyy
 ## 贡献
 
 欢迎通过 Issue 报告可复现的问题，或提交范围明确的 Pull Request。涉及新诊断或修复能力时，请同时说明所需权限、可能副作用、失败行为和回滚方式，并补充对应测试；不要在 Issue、日志或附件中上传真实密钥、完整用户路径或其他私人数据。
+
+## 预览版 EXE 分发
+
+修复计划预览版使用独立标签 `v0.2.2-repair-preview.1`，不替换稳定版。首次执行 `build.ps1` 需要联网获取官方许可证材料，后续构建校验本地缓存；完整许可证同时嵌入 EXE 和独立 ZIP。详见[分发验证与未验证范围](docs/release-preview-packaging.md)及[第三方说明](THIRD_PARTY_NOTICES.md)。未签名 EXE 可能触发 SmartScreen，系统修复尚未通过隔离环境真实验证。

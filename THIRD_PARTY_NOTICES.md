@@ -13,7 +13,9 @@ HelpPack 自身使用 MIT License。构建和运行涉及以下第三方组件�
 
 项目没有联网加载字体、图片或前端资源。应用运行时的 DNS 检测会尝试解析 `www.microsoft.com`，默认网关检测会向本机默认网关发送一次 ping。
 
-本轮没有新增 pip 依赖。PyInstaller 的 Qt Multimedia 钩子在本地构建中带入 FFmpeg 后端及 `avcodec-61`、`avformat-61`、`avutil-59`、`swresample-5` 动态库；这些不是 HelpPack MIT 许可证覆盖的代码。公开分发新 EXE 前仍需逐项核对实际构建配置、第三方完整许可证、源码提供及 LGPL 可替换/重链接义务。本轮构建仅为本地验收，未上传新 Release。Qt 对应版本的第三方归属参考 [Qt 6.8 Multimedia 许可证与归属](https://doc.qt.io/qt-6.8/qtmultimedia-index.html#licenses-and-attributions)。
+没有新增 pip 依赖。实际 FFmpeg 动态库版本为 7.1，运行时报告 LGPL 2.1-or-later，构建参数未启用 GPL、nonfree 或外部库；本分发选择 LGPLv3。这些组件不由 HelpPack MIT 许可证覆盖。
+
+发布构建通过 `scripts/prepare_distribution.py` 收集对应版本的完整许可证和第三方归属说明（164 个文件），嵌入 EXE 的 `licenses/`，并生成 `HelpPack-Third-Party-Licenses.zip`。其中 `SOURCE-AND-REBUILD.md` 提供精确版本源码下载入口及替换库后重新打包说明；修改库重建流程尚未实际验证。正式 spec 排除未使用的 Qt Virtual Keyboard、Qt PDF 及对应插件。Qt 第三方归属参考 [Qt 6.8 Multimedia 许可证与归属](https://doc.qt.io/qt-6.8/qtmultimedia-index.html#licenses-and-attributions)。许可证清单不是法律意见或专利许可保证。
 
 官方许可证入口：
 
