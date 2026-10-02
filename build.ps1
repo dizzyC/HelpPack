@@ -9,6 +9,8 @@ if (-not (Test-Path -LiteralPath $PythonExe)) {
 
 Push-Location $ProjectRoot
 try {
+    & $PythonExe scripts\prepare_distribution.py
+    if ($LASTEXITCODE -ne 0) { throw "Distribution license preparation failed." }
     & $PythonExe -m PyInstaller --noconfirm --clean --distpath $OutputDirectory --workpath $WorkDirectory helppack.spec
     if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed." }
     Write-Host "Built: $OutputDirectory\HelpPack-English.exe"

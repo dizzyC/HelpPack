@@ -107,3 +107,7 @@ Contributions are welcome. Keep conclusions evidence-based, add tests, preserve 
 ## License
 
 MIT, copyright © 2026 dizzyC. See [LICENSE](LICENSE). Dependencies retain their own licenses.
+
+## Preview executable distribution
+
+The repair-plan preview uses the separate tag `v0.2.2-repair-preview.1` and does not replace the stable release. The first `build.ps1` run needs network access to official license materials; later builds verify the local cache. Full notices are embedded in the EXE and supplied as a separate ZIP. See [distribution verification and limitations](docs/release-preview-packaging.md) and [third-party notices](THIRD_PARTY_NOTICES.md). Unsigned executables may trigger SmartScreen. Real system repairs in an isolated environment remain unverified.
