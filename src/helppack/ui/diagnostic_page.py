@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+from dataclasses import asdict
 
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
@@ -10,12 +11,14 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QInputDialog,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QStackedWidget,
     QTreeWidget,
     QTreeWidgetItem,
@@ -23,7 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..diagnostics.history import DiagnosticHistoryStore
+from ..diagnostics.history import DiagnosticHistoryStore, compare_summaries
 from ..diagnostics.models import (
     RepairSuggestion,
     SafetyLevel,
@@ -32,6 +35,8 @@ from ..diagnostics.models import (
 from ..diagnostics.repairs import RepairCoordinator, RepairError
 from ..diagnostics.reporting import generate_diagnostic_markdown
 from ..diagnostics.workers import DiagnosticWorker, RepairWorker
+from ..plan_resources import tr
+from .repair_plan_panel import RepairPlanPanel
 
 DIAGNOSTIC_CATEGORIES = [
     "系统卡顿",
@@ -82,7 +87,7 @@ class DiagnosticPage(QWidget):
 
     @property
     def is_running(self) -> bool:
-        return (self.thread is not None and self.thread.isRunning()) or (self.repair_thread is not None and self.repair_thread.isRunning())
+        return (getattr(self, "plan_panel", None) is not None and self.plan_panel.is_running) or (self.thread is not None and self.thread.isRunning()) or (self.repair_thread is not None and self.repair_thread.isRunning())
 
     def show_start(self) -> None:
         self.pages.setCurrentIndex(0)
@@ -96,6 +101,9 @@ class DiagnosticPage(QWidget):
             self.history_label.setText("尚无本机诊断历史。")
 
     def request_cancel(self) -> None:
+        if self.plan_panel.is_running:
+            self.plan_panel.cancel()
+            return
         if self.repair_thread is not None and self.repair_thread.isRunning():
             self.scan_status.setText("修复正在进行，当前操作不能安全中断；完成后会显示结果。")
             return
@@ -135,6 +143,13 @@ class DiagnosticPage(QWidget):
         self.category.addItems(DIAGNOSTIC_CATEGORIES)
         self.category.setMinimumHeight(40)
         body.addWidget(self.category)
+        body.addWidget(QLabel(tr("network_target")))
+        self.network_target = QLineEdit("https://www.microsoft.com/")
+        body.addWidget(self.network_target)
+        self.network_scope = QComboBox()
+        for scope in ("all_sites", "one_site", "wifi"):
+            self.network_scope.addItem(tr(scope), scope)
+        body.addWidget(self.network_scope)
         body.addStretch()
         nav = QHBoxLayout()
         back = QPushButton("返回首页")
@@ -217,6 +232,9 @@ class DiagnosticPage(QWidget):
         repair_row.addWidget(self.rollback_button)
         repair_row.addStretch()
         body.addLayout(repair_row)
+        self.plan_panel = RepairPlanPanel(self)
+        self.plan_panel.busy_changed.connect(lambda busy: (self.repair_button.setEnabled(not busy), self.rollback_button.setEnabled(not busy and bool(self.rollback_ids))))
+        body.addWidget(self.plan_panel)
         nav = QHBoxLayout()
         again = QPushButton("重新选择")
         again.clicked.connect(self.show_start)
@@ -227,7 +245,10 @@ class DiagnosticPage(QWidget):
         nav.addStretch()
         nav.addWidget(package)
         body.addLayout(nav)
-        return page
+        area = QScrollArea()
+        area.setWidgetResizable(True)
+        area.setWidget(page)
+        return area
 
     def _start_scan(self) -> None:
         if self.is_running:
@@ -238,7 +259,20 @@ class DiagnosticPage(QWidget):
         self.scan_progress.setValue(0)
         self.scan_status.setText("准备开始…")
         self.thread = QThread(self)
-        self.worker = DiagnosticWorker(self.category.currentText())
+        from ..diagnostics.checks import default_checks
+        from ..diagnostics.engine import DiagnosticEngine
+        from ..diagnostics.scenario_checks import NetworkSceneCheck
+        checks = default_checks()
+        if self.category.currentText() in {"网络或Wi-Fi异常", "Microsoft Store 问题"}:
+            try:
+                checks.append(NetworkSceneCheck(self.network_target.text(), self.network_scope.currentData()))
+            except ValueError:
+                self.pages.setCurrentIndex(0)
+                QMessageBox.warning(self, tr("network_title"), tr("unsupported"))
+                self.thread.deleteLater()
+                self.thread = None
+                return
+        self.worker = DiagnosticWorker(self.category.currentText(), DiagnosticEngine(checks))
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.worker.progress.connect(self._scan_progress)
@@ -256,11 +290,22 @@ class DiagnosticPage(QWidget):
 
     def _scan_completed(self, summary: ScanSummary) -> None:
         self.summary = summary
+        if getattr(self, "repair_before", None):
+            changes = compare_summaries(self.repair_before, asdict(summary))
+            self.operation_summaries.append("修复前后变化（变化不证明因果）：\n" + "\n".join(changes))
+            self.last_operation_message += "\n" + "\n".join(changes)
+            try:
+                if self.repair_history_id:
+                    self.history.add_operation(self.repair_history_id, {"action": "修复后复检", "changes": changes, "finished_at": summary.finished_at})
+            except (OSError, ValueError, TypeError):
+                self.last_operation_message += "\n前后对比保存失败。"
+            self.repair_before = None
         try:
             self.history.save(summary)
         except OSError:
             pass
         self._populate_results()
+        self.plan_panel.set_summary(summary)
         self.pages.setCurrentIndex(2)
         self.phase_changed.emit("本机诊断 · 查看证据")
 
@@ -308,6 +353,8 @@ class DiagnosticPage(QWidget):
             top.setData(0, Qt.ItemDataRole.UserRole, full_detail)
             top.setToolTip(0, full_detail)
             for repair in item.repair_suggestions:
+                if repair.action_id in {"install_wua_driver", "install_inf_driver", "scan_devices"}:
+                    continue
                 if repair.safety_level == SafetyLevel.L1 and not repair.requires_admin:
                     group = "可安全修复"
                 elif repair.safety_level == SafetyLevel.L3:
@@ -409,6 +456,9 @@ class DiagnosticPage(QWidget):
     def _start_repair_worker(self, suggestion: RepairSuggestion, second_confirmation: str | bool) -> None:
         if self.repair_thread is not None and self.repair_thread.isRunning():
             return
+        self.repair_before = asdict(self.summary) if self.summary else None
+        self.repair_history_id = self.history.last_id
+        self.repair_action_id = suggestion.action_id
         self.pages.setCurrentIndex(1)
         self.scan_heading.setText("正在执行单项修复")
         self.phase_changed.emit("本机诊断 · 执行单项修复")
@@ -435,11 +485,22 @@ class DiagnosticPage(QWidget):
         self.last_operation_message = outcome.message + "\n" + outcome.recheck_summary + restart
         from ..redaction import redact_text
         self.operation_summaries.append(redact_text(f"{outcome.action_id}：{self.last_operation_message}"))
+        if self.repair_history_id:
+            try:
+                self.history.add_operation(self.repair_history_id, {"action": outcome.action_id, "executed": outcome.executed, "verified": outcome.verified, "result": self.last_operation_message})
+            except (OSError, ValueError, TypeError):
+                self.last_operation_message += "\n操作记录保存失败，请手动保留结果。"
         QMessageBox.information(self, "操作已完成", self.last_operation_message + "\n现在将重新进行只读检查。")
         self.scan_progress.setRange(0, 100)
         self._recheck_after_repair = True
 
     def _repair_failed(self, message: str) -> None:
+        self.repair_before = None
+        if getattr(self, "repair_history_id", None):
+            try:
+                self.history.add_operation(self.repair_history_id, {"action": self.repair_action_id, "confirmed": True, "verified": False, "result": message})
+            except (OSError, ValueError, TypeError):
+                message += "\n失败记录未能保存。"
         self.scan_progress.setRange(0, 100)
         QMessageBox.warning(self, "修复未完成", f"没有确认修复成功：{message}")
         self.pages.setCurrentIndex(2)

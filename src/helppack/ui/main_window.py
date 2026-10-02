@@ -1,11 +1,17 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QThread
+import tempfile
+import uuid
+from pathlib import Path
+
+from PySide6.QtCore import Qt, QThread, QTimer
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
     QFileDialog,
     QFormLayout,
     QFrame,
@@ -30,6 +36,8 @@ from ..models import Attachment, ProblemDetails, ReportBundle, SystemSnapshot
 from ..report import DEFAULT_INCLUDED_FIELDS, SYSTEM_LABELS, generate_markdown
 from ..workers import CollectionWorker
 from .diagnostic_page import DiagnosticPage
+from .investigation_page import InvestigationPage
+from .screenshot_editor import ScreenshotEditor
 
 CATEGORIES = [
     "软件无法启动或崩溃",
@@ -53,6 +61,7 @@ class MainWindow(QMainWindow):
         self.diagnostics_markdown = ""
         self.collection_thread: QThread | None = None
         self.collection_worker: CollectionWorker | None = None
+        self.screenshot_copies = tempfile.TemporaryDirectory(prefix="helppack_edited_")
 
         root = QWidget()
         layout = QVBoxLayout(root)
@@ -71,6 +80,10 @@ class MainWindow(QMainWindow):
         self.diagnostic_page.add_to_help_pack.connect(self._attach_diagnostics)
         self.diagnostic_page.phase_changed.connect(self.step_label.setText)
         self.stack.addWidget(self.diagnostic_page)
+        self.investigation_page = InvestigationPage(self)
+        self.investigation_page.go_home.connect(self._back_home)
+        self.investigation_page.add_to_help_pack.connect(self._attach_diagnostics)
+        self.stack.addWidget(self.investigation_page)
         layout.addWidget(self.stack, 1)
         self.setCentralWidget(root)
         self._apply_style()
@@ -110,6 +123,9 @@ class MainWindow(QMainWindow):
         diagnose.setMinimumHeight(44)
         diagnose.clicked.connect(self._open_diagnostics)
         body.addWidget(diagnose, alignment=Qt.AlignmentFlag.AlignLeft)
+        toolbox = QPushButton("症状向导与专项排查")
+        toolbox.clicked.connect(lambda: self._go(7, "专项排查 · 症状与证据"))
+        body.addWidget(toolbox, alignment=Qt.AlignmentFlag.AlignLeft)
         body.addStretch(2)
         return page
 
@@ -131,11 +147,18 @@ class MainWindow(QMainWindow):
         self.attempted_input = QPlainTextEdit()
         self.attempted_input.setPlaceholderText("例如：重启电脑、重新安装软件")
         self.attempted_input.setMinimumHeight(78)
+        self.remaining_input = QPlainTextEdit()
+        self.remaining_input.setPlaceholderText("现在还有什么没有解决？可留空，但不会自动认定已解决。")
+        self.remaining_input.setMinimumHeight(65)
+        self.resolution = QComboBox()
+        self.resolution.addItems(["稍后处理", "未解决", "已解决"])
         form.addRow("问题类型", self.category)
         form.addRow("问题标题 *", self.title_input)
         form.addRow("发生了什么 *", self.description_input)
         form.addRow("问题前做过什么", self.preceding_input)
         form.addRow("已经尝试过什么", self.attempted_input)
+        form.addRow("仍未解决的问题", self.remaining_input)
+        form.addRow("处理状态（自己标记）", self.resolution)
         body.addLayout(form)
 
         attachment_header = QHBoxLayout()
@@ -145,8 +168,11 @@ class MainWindow(QMainWindow):
         add_button.clicked.connect(self._add_screenshots)
         remove_button = QPushButton("移除选中")
         remove_button.clicked.connect(self._remove_screenshot)
+        edit_button = QPushButton("裁剪 / 遮挡选中截图")
+        edit_button.clicked.connect(self._edit_screenshot)
         attachment_header.addWidget(add_button)
         attachment_header.addWidget(remove_button)
+        attachment_header.addWidget(edit_button)
         body.addLayout(attachment_header)
         self.attachment_list = QListWidget()
         self.attachment_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
@@ -212,6 +238,9 @@ class MainWindow(QMainWindow):
         self.preview_edit.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
         content.addWidget(self.preview_edit, 1)
         layout.addLayout(content, 1)
+        copy = QPushButton("复制当前预览的简洁问题摘要")
+        copy.clicked.connect(self._copy_report_summary)
+        layout.addWidget(copy)
         layout.addLayout(self._nav(lambda: self._go(3, "3 / 5  检查隐私"), self._show_export, "确认并导出"))
         return page
 
@@ -297,7 +326,7 @@ class MainWindow(QMainWindow):
         self._go(6, "本机诊断 · 选择问题")
 
     def _attach_diagnostics(self, markdown: str) -> None:
-        self.diagnostics_markdown = markdown
+        self.diagnostics_markdown = "\n\n".join(filter(None, [self.diagnostics_markdown, markdown]))
         QMessageBox.information(self, "诊断结果已保留", "只读诊断结果会加入接下来生成的求助包。请继续填写问题描述。")
         self._go(1, "1 / 5  描述问题")
 
@@ -318,6 +347,25 @@ class MainWindow(QMainWindow):
             self.attachments.pop(row)
         self._sync_attachment_list()
 
+    def _edit_screenshot(self) -> None:
+        index = self.attachment_list.currentRow()
+        if index < 0:
+            QMessageBox.information(self, "选择截图", "请先选择一张截图。")
+            return
+        attachment = self.attachments[index]
+        try:
+            dialog = ScreenshotEditor(attachment.export_source, self)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            copy = Path(self.screenshot_copies.name) / f"screenshot_{uuid.uuid4().hex}.png"
+            if not dialog.canvas.image.save(str(copy), "PNG"):
+                raise ValueError("无法保存处理后的副本")
+            attachment.processed_path = copy
+            attachment.export_name = f"screenshot_processed_{index + 1}_{uuid.uuid4().hex[:8]}.png"
+            self._sync_attachment_list()
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "截图编辑未完成", str(exc))
+
     def _sync_attachment_list(self) -> None:
         self.attachment_list.clear()
         self.attachment_list.addItems([item.export_name for item in self.attachments])
@@ -334,6 +382,8 @@ class MainWindow(QMainWindow):
             description=description,
             preceding_actions=self.preceding_input.toPlainText().strip(),
             attempted_solutions=self.attempted_input.toPlainText().strip(),
+            unresolved_issues=self.remaining_input.toPlainText().strip(),
+            resolution_status=self.resolution.currentText(),
         )
         self._go(2, "2 / 5  收集信息")
         self.progress.setValue(0)
@@ -350,6 +400,12 @@ class MainWindow(QMainWindow):
         self.collection_thread.finished.connect(self.collection_thread.deleteLater)
         self.collection_thread.finished.connect(self._collection_thread_finished)
         self.collection_thread.start()
+
+    def _copy_report_summary(self):
+        from ..redaction import redact_text
+        from ..report import concise_summary
+        text = redact_text(self.preview_edit.toPlainText(), extra_paths=[str(p) for a in self.attachments for p in (a.path, a.export_source)])
+        QApplication.clipboard().setText(concise_summary(text))
 
     def _collection_thread_finished(self) -> None:
         self.collection_thread = None
@@ -409,7 +465,8 @@ class MainWindow(QMainWindow):
         if not path:
             return
         try:
-            output = export_markdown(self.preview_edit.toPlainText(), path)
+            from ..redaction import redact_text
+            output = export_markdown(redact_text(self.preview_edit.toPlainText(), extra_paths=self.bundle.source_paths() if self.bundle else []), path)
         except OSError:
             QMessageBox.warning(self, "导出失败", "无法写入所选位置，请选择其他文件夹后重试。")
             return
@@ -423,7 +480,8 @@ class MainWindow(QMainWindow):
         if not path:
             return
         try:
-            output = export_zip(self.preview_edit.toPlainText(), self.bundle, path)
+            from ..redaction import redact_text
+            output = export_zip(redact_text(self.preview_edit.toPlainText(), extra_paths=self.bundle.source_paths()), self.bundle, path)
         except (OSError, ValueError):
             QMessageBox.warning(self, "导出失败", "无法创建求助包，请确认截图仍然存在并选择其他文件夹重试。")
             return
@@ -435,12 +493,25 @@ class MainWindow(QMainWindow):
         self._sync_attachment_list()
         for widget in (self.title_input,):
             widget.clear()
-        for widget in (self.description_input, self.preceding_input, self.attempted_input, self.preview_edit):
+        for widget in (self.description_input, self.preceding_input, self.attempted_input, self.remaining_input, self.preview_edit):
             widget.clear()
+        self.resolution.setCurrentText("稍后处理")
         self.export_status.setText("尚未导出")
         self._go(0, "开始")
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        if self.investigation_page.monitor_thread is not None:
+            self.investigation_page.stop_monitor()
+            self.investigation_page.status.setText("正在停止监测，请稍后再次关闭窗口。")
+            event.ignore()
+            QTimer.singleShot(500, self.close)
+            return
+        if self.investigation_page.is_running:
+            self.investigation_page.cancel_task()
+            self.investigation_page.status.setText("正在取消专项检查，请等待当前查询结束后再关闭。")
+            event.ignore()
+            QTimer.singleShot(500, self.close)
+            return
         if self.collection_thread is not None and self.collection_thread.isRunning():
             QMessageBox.information(self, "正在收集", "请等待当前信息收集完成后再关闭。")
             event.ignore()
@@ -449,6 +520,8 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "操作进行中", "请等待修复完成，或取消只读诊断后再关闭。")
             event.ignore()
             return
+        self.investigation_page.stop_audio()
+        self.screenshot_copies.cleanup()
         event.accept()
 
     def _apply_style(self) -> None:

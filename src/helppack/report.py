@@ -39,6 +39,7 @@ def generate_markdown(bundle: ReportBundle, included_fields: Iterable[str] | Non
         "## 问题摘要",
         f"- 问题类型：{problem.category}",
         f"- 问题标题：{problem.title or '未填写'}",
+        f"- 处理状态（用户标记）：{problem.resolution_status}",
         "",
         "## 用户描述",
         problem.description or "未填写",
@@ -48,6 +49,9 @@ def generate_markdown(bundle: ReportBundle, included_fields: Iterable[str] | Non
         "",
         "## 已尝试的操作",
         problem.attempted_solutions or "未填写",
+        "",
+        "## 仍未解决的问题",
+        problem.unresolved_issues or "尚未填写；诊断正常或指标改善不代表问题已经解决。",
         "",
         "## 系统环境",
         *_format_fields(snapshot, selected, environment_keys),
@@ -88,3 +92,23 @@ def _format_fields(snapshot: dict[str, str], selected: set[str], keys: tuple[str
         value = snapshot.get(key, "无法读取").replace("\n", "<br>")
         rows.append(f"- {SYSTEM_LABELS[key]}：{value}")
     return rows or ["未包含此类信息"]
+
+
+def concise_summary(report_text: str) -> str:
+    """Summarize only the current preview, never reintroduce removed source data."""
+    text = redact_text(report_text)
+    sections = []
+    current = []
+    for line in text.splitlines():
+        if line.startswith("## ") and current:
+            sections.append(current)
+            current = []
+        current.append(line)
+    if current:
+        sections.append(current)
+    priority = ("问题摘要", "用户描述", "已尝试的操作", "仍未解决的问题", "前后", "症状", "证据")
+    selected = [s for s in sections if any(word in s[0] for word in priority)]
+    if not selected:
+        selected = sections
+    body = "\n\n".join("\n".join(s).strip()[:450] for s in selected)[:2000]
+    return "HelpPack 简洁问题摘要（检查线索不是确定原因）：\n" + body + "\n如需进一步排查，请结合完整报告；转发前检查隐私。"

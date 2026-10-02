@@ -33,6 +33,9 @@ class CommandRunner:
         if any("\x00" in item or "\r" in item or "\n" in item for item in args):
             raise ValueError("命令参数包含不允许的控制字符")
         safe_args = tuple(args)
+        if os.name == "nt" and args[0].lower() in {"powershell.exe", "ping.exe", "sc.exe", "ipconfig.exe"}:
+            name = args[0].lower()
+            safe_args = (str(_system32() / ("WindowsPowerShell/v1.0/powershell.exe" if name == "powershell.exe" else name)), *args[1:])
         try:
             completed = subprocess.run(
                 safe_args,
@@ -80,7 +83,7 @@ class CommandRunner:
         name = args[0].lower()
         if name not in allowed or any(any(c in item for c in "\x00\r\n") for item in args):
             raise ValueError("修复命令不在允许列表")
-        system32 = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
+        system32 = _system32()
         executable = system32 / ("WindowsPowerShell/v1.0/powershell.exe" if name == "powershell.exe" else name)
         safe_args = [str(executable), *args[1:]]
         # communicate(timeout=...) with subprocess.run kills a child on timeout.
@@ -92,11 +95,24 @@ class CommandRunner:
                 stdout, stderr = process.communicate(timeout=timeout)
             except subprocess.TimeoutExpired:
                 stdout, stderr = process.communicate()
+                # Keep waiting safely, but do not report an over-deadline operation as verified success.
+                return CommandResult(tuple(safe_args), process.returncode, _text(stdout), _text(stderr), timed_out=True)
             return CommandResult(tuple(safe_args), process.returncode, _text(stdout), _text(stderr))
         except FileNotFoundError:
             return CommandResult(tuple(safe_args), -1, "", "命令不可用", unsupported=True)
         except PermissionError:
             return CommandResult(tuple(safe_args), -1, "", "权限不足", permission_denied=True)
+
+
+def _system32() -> Path:
+    if os.name == "nt":
+        import ctypes
+        buffer = ctypes.create_unicode_buffer(32768)
+        length = ctypes.windll.kernel32.GetSystemDirectoryW(buffer, len(buffer))
+        if not 0 < length < len(buffer):
+            raise OSError("Cannot locate the Windows system directory")
+        return Path(buffer.value)
+    return Path("C:/Windows/System32")
 
 
 def _text(value: str | bytes | None) -> str:

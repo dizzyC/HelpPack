@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import platform
 import re
 from typing import ClassVar
-
-import psutil
 
 from ..redaction import redact_text
 from .engine import ScanContext
@@ -69,17 +66,6 @@ class NetworkRepairEligibilityCheck:
             is_complex = any(word in f"{alias} {description}".lower() for word in ("vpn", "virtual", "hyper-v", "bridge", "tap", "tunnel"))
             dhcp = str(row.get("Dhcp", "")).lower() == "enabled"
             evidence.append(f"{alias or '未命名接口'}：DHCP {'启用' if dhcp else '未启用'}；{'复杂/虚拟接口' if is_complex else '普通接口'}")
-            if dhcp and alias and str(row.get("Index", "")).isdigit():
-                repairs.append(RepairSuggestion(
-                    "renew_dhcp", f"续租 DHCP：{alias}", {"interface_alias": alias}, SafetyLevel.L2, True,
-                    "该接口可能短暂断网。", f"只对接口“{alias}”执行 DHCP 续租", "续租本身不能可靠还原。",
-                    RollbackCapability.BEST_EFFORT, side_effects=["短暂断网"], evidence_ids=[self.check_id], estimated_seconds=90,
-                ))
-                repairs.append(RepairSuggestion(
-                    "reset_dns_to_dhcp", f"恢复 DHCP DNS：{alias}", {"interface_index": str(row["Index"])}, SafetyLevel.L2, True,
-                    "会移除该接口手动配置的 DNS 服务器。", f"只重置接口“{alias}”的 DNS 为 DHCP 默认值", "使用 DPAPI 加密快照恢复原 DNS。",
-                    RollbackCapability.FULL, side_effects=["域名解析可能短暂中断"], evidence_ids=[self.check_id], estimated_seconds=45,
-                ))
         return [_result(self.check_id, "网络或Wi-Fi异常", self.display_name, DiagnosticStatus.NOTICE,
             [Evidence("活动接口", redact_text("；".join(evidence)) if evidence else "没有可读取的活动接口")],
             "网络栈损坏尚无可靠证据，因此不提供全局 Winsock/TCP/IP 重置。", ["按实际症状选择单个接口；正常的自定义 DNS 无需重置。"], repairs,
@@ -177,29 +163,8 @@ class SystemRepairCheck:
     SERVICE_LABELS: ClassVar[dict[str, str]] = {"wuauserv": "Windows Update", "BITS": "BITS", "cryptsvc": "加密服务", "Spooler": "打印后台处理", "Audiosrv": "Windows Audio", "AudioEndpointBuilder": "音频终结点", "bthserv": "蓝牙支持"}
 
     def run(self, context: ScanContext) -> list[DiagnosticResult]:
-        if platform.system() != "Windows" or not hasattr(psutil, "win_service_get"):
-            raise NotImplementedError
-        repairs: list[RepairSuggestion] = []
-        rows: list[str] = []
-        for name, label in self.SERVICE_LABELS.items():
-            selection = {"声音问题": {"Audiosrv", "AudioEndpointBuilder"}, "蓝牙问题": {"bthserv"},
-                         "打印机问题": {"Spooler"}, "Windows更新问题": {"wuauserv", "BITS", "cryptsvc"}}
-            if context.category in selection and name not in selection[context.category]:
-                continue
-            try:
-                status = psutil.win_service_get(name).status()
-            except psutil.Error:
-                status = "无法读取"
-            rows.append(f"{label}：{status}")
-            if status == "stopped":
-                repairs.append(RepairSuggestion("service_start", f"启动服务：{label}", {"service_name": name}, SafetyLevel.L2, True, "只启动该服务，不修改启动类型。", f"启动服务 {name}", "可人工再次停止。", RollbackCapability.BEST_EFFORT, RestartRequirement.SERVICE, evidence_ids=[self.check_id], estimated_seconds=60))
-            elif status == "running" and context.category in selection:
-                repairs.append(RepairSuggestion("service_restart", f"重新启动服务：{label}", {"service_name": name}, SafetyLevel.L2, True,
-                    "会暂时中断该服务正在处理的任务，未保存的任务可能失败。", f"只重新启动 {name}，不改启动类型", "无法恢复被中断的任务。",
-                    RollbackCapability.NONE, RestartRequirement.SERVICE, evidence_ids=[self.check_id], estimated_seconds=90))
-        return [_result(self.check_id, "系统", self.display_name, DiagnosticStatus.NOTICE,
-            [Evidence("相关服务", "；".join(rows))], "按需启动的服务停止可能正常；启动服务前请确认与当前故障相关。",
-            ["尚无组件损坏证据，因此不自动推荐 DISM/SFC 修复。"], repairs, severity=Severity.LOW, confidence="中")]
+        from .scenario_checks import SafeServiceCheck
+        return SafeServiceCheck().run(context)
 
 
 VENDOR_SUPPORT_URLS = {

@@ -47,7 +47,7 @@ def export_zip(
                 continue
             attachment_root.mkdir(exist_ok=True)
             target = attachment_root / Path(attachment.export_name).name
-            shutil.copy2(attachment.path, target)
+            shutil.copy2(attachment.export_source, target)
             files.append(target)
             attachment_names.append(target.name)
 

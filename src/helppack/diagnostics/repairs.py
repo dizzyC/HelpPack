@@ -17,6 +17,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
 
+from ..plan_resources import tr
 from ..redaction import redact_text
 from .models import (
     RepairSuggestion,
@@ -37,6 +38,11 @@ GUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]
 OFFICIAL_DRIVER_HOSTS = frozenset({"www.dell.com", "support.lenovo.com", "support.hp.com", "www.intel.com", "www.nvidia.com", "www.amd.com"})
 ADMIN_ACTIONS = frozenset({"renew_dhcp", "reset_dns_to_dhcp", "reset_winsock", "reset_tcp_ip", "service_start", "service_restart", "time_resync", "dism_restore_health", "sfc_scan", "scan_devices", "install_wua_driver", "install_inf_driver"})
 HIGH_RISK_ACTIONS = frozenset({"reset_winsock", "reset_tcp_ip", "store_reset_data", "dism_restore_health", "sfc_scan", "install_wua_driver", "install_inf_driver"})
+
+
+HIGH_RISK_ACTIONS = HIGH_RISK_ACTIONS | frozenset({"renew_dhcp", "reset_dns_to_dhcp", "reset_user_proxy", "service_restart"})
+
+ADMIN_ACTIONS = ADMIN_ACTIONS | frozenset({"flush_dns_cache", "restore_dns_settings", "restore_service_state"})
 
 
 class RepairError(RuntimeError):
@@ -187,7 +193,7 @@ class RegistryRepairHandler:
 
     def validate(self, target: dict[str, str]) -> None:
         if self.action_id == "disable_hkcu_startup":
-            if target.get("key_path") not in ALLOWED_STARTUP_KEYS:
+            if set(target) != {"key_path", "value_name"} or target.get("key_path") not in ALLOWED_STARTUP_KEYS:
                 raise InvalidRepairTarget("启动项路径不受支持")
             name = target.get("value_name", "")
             if not name or len(name) > 260 or any(char in name for char in "\r\n\x00\\/"):
@@ -259,6 +265,7 @@ class CommandRepairHandler:
         check_preconditions(self.action_id, target, self.runner)
         args, timeout = self._command(target)
         result = self.runner.run_repair(args, timeout=timeout)
+        self.last_exit_code = result.returncode
         _ensure_command_success(result)
         if self.action_id == "install_wua_driver":
             value = result.json_value()
@@ -310,6 +317,9 @@ class RepairCoordinator:
         self.handlers = handlers or build_default_handlers(self.backend, self.runner)
         self.audit_log: list[str] = []
         self._prepared: dict[str, PreparedRepair] = {}
+        if handlers is None:
+            from .repair_actions import install_safe_handlers
+            install_safe_handlers(self)
 
     def prepare(self, suggestion: RepairSuggestion) -> PreparedRepair:
         suggestion = copy.deepcopy(suggestion)
@@ -370,13 +380,18 @@ class RepairCoordinator:
         handler = self.handlers[prepared.action_id]
         handler.validate(prepared.target)
         snapshot = handler.snapshot(prepared.target)
+        if prepared.action_id == "disable_hkcu_startup" and not any(v["exists"] for v in snapshot["values"]):
+            raise RepairExecutionError(tr("stale"))
         backup_id = None
         if snapshot is not None:
             payload = {"version": 2, "action_id": prepared.action_id, "target": prepared.target, "created_at": datetime.now().astimezone().isoformat(timespec="seconds"), "rollback_capability": prepared.rollback_capability.value, "snapshot": snapshot}
-            backup_id = self.backups.save(payload, sensitive=prepared.action_id in {"reset_user_proxy", "reset_dns_to_dhcp", "renew_dhcp"})
+            backup_id = self.backups.save(payload, sensitive=True)
         self._record_operation(prepared.action_id, "执行中", backup_id)
         try:
             message = handler.execute(prepared.target)
+            if snapshot is not None:
+                payload["post_snapshot"] = handler.snapshot(prepared.target)
+                backup_id = self.backups.save(payload, sensitive=True)
         except Exception:
             self._record_operation(prepared.action_id, "执行未完整完成；需要复查", backup_id)
             raise
@@ -405,6 +420,15 @@ class RepairCoordinator:
             raise InvalidRepairTarget("备份操作类型不受支持")
         if payload.get("rollback_capability") == RollbackCapability.NONE.value:
             raise InvalidRepairTarget("此操作没有自动回滚能力")
+        if "post_snapshot" not in payload:
+            raise RepairExecutionError(tr("unavailable"))
+        if payload["action_id"] in {"reset_dns_to_dhcp", "service_start"} and not is_admin():
+            raise PermissionError(tr("permission"))
+        from .repair_actions import state_signature
+        target = payload.get("target", {})
+        handler.validate(target)
+        if state_signature(handler.snapshot(target)) != state_signature(payload["post_snapshot"]):
+            raise RepairExecutionError(tr("conflict"))
         message = handler.rollback(dict(payload.get("snapshot", payload)))
         self._log(f"已回滚备份：{backup_id}")
         return RepairOutcome(True, message, backup_id=backup_id, action_id=str(payload.get("action_id", "")))
@@ -559,7 +583,16 @@ def _snapshot_dns(runner: CommandRunner, target: dict[str, str]) -> dict[str, An
     result = runner.run(_powershell_args(script), timeout=30)
     _ensure_command_success(result)
     try:
-        return {"interface_index": index, "dns": json.loads(result.stdout.lstrip("\ufeff"))}
+        rows = json.loads(result.stdout.lstrip("\ufeff"))
+        if not isinstance(rows, list) or len(rows) != 2 or {r.get("AddressFamily") for r in rows} != {2, 23}:
+            raise ValueError("Incomplete DNS family snapshot")
+        for row in rows:
+            if not isinstance(row.get("Automatic"), bool) or not GUID_RE.fullmatch(str(row.get("InterfaceGuid", "")).strip("{}")):
+                raise ValueError("Incomplete DNS configuration snapshot")
+            for address in row.get("ServerAddresses", []):
+                if ipaddress.ip_address(address).version != (4 if row["AddressFamily"] == 2 else 6):
+                    raise ValueError("Mismatched DNS address family")
+        return {"interface_index": index, "dns": rows}
     except (ValueError, TypeError) as exc:
         raise RepairExecutionError("无法保存原 DNS 配置，已取消修改") from exc
 
@@ -569,6 +602,17 @@ def _restore_dns(runner: CommandRunner, snapshot: dict[str, Any]) -> str:
     rows = snapshot.get("dns", [])
     if isinstance(rows, dict):
         rows = [rows]
+    # Validate both families before the first mutation, not halfway through restore.
+    if {row.get("AddressFamily") for row in rows} != {2, 23} or len(rows) != 2:
+        raise InvalidRepairTarget(tr("unavailable"))
+    for row in rows:
+        guid = str(row.get("InterfaceGuid", "")).strip("{}")
+        if not GUID_RE.fullmatch(guid) or not isinstance(row.get("Automatic"), bool):
+            raise InvalidRepairTarget(tr("unavailable"))
+        for address in row.get("ServerAddresses", []):
+            parsed = ipaddress.ip_address(address)
+            if parsed.version != (4 if row["AddressFamily"] == 2 else 6):
+                raise InvalidRepairTarget(tr("unavailable"))
     for row in rows:
         family = int(row.get("AddressFamily", 0))
         servers = [str(ipaddress.ip_address(item)) for item in row.get("ServerAddresses", [])]

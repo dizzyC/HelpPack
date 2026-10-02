@@ -25,6 +25,9 @@ def main() -> int:
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
+    if len(sys.argv) == 3 and sys.argv[1] == "--plan-self-check":
+        from .plan_acceptance import run
+        return run(sys.argv[2])
     app = QApplication(sys.argv)
     app.setApplicationName("HelpPack")
     app.setOrganizationName("HelpPack")
