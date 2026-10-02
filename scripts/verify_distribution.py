@@ -17,7 +17,7 @@ def verify(path):
     for row in manifest:
         payload = archive.extract(names["licenses/" + row["path"]])
         assert hashlib.sha256(payload).hexdigest() == row["sha256"]
-        assert b"C:\\Users\\86137" not in payload
+        assert str(Path.home()).encode("utf-8").lower() not in payload.lower()
     print(f"{path.name}: PASS; {len(manifest)} embedded notices verified; unused plugins excluded")
 
 
