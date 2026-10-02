@@ -5,17 +5,20 @@ from dataclasses import asdict
 
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QHeaderView,
     QInputDialog,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QStackedWidget,
     QTreeWidget,
     QTreeWidgetItem,
@@ -35,7 +38,9 @@ from ..diagnostics.repairs import RepairCoordinator, RepairError
 from ..diagnostics.reporting import generate_diagnostic_markdown
 from ..diagnostics.workers import DiagnosticWorker, RepairWorker
 from ..english import label
+from ..plan_resources import tr
 from .localized_widgets import ChoiceBox
+from .repair_plan_panel import RepairPlanPanel
 from .repair_review import RepairReview
 
 DIAGNOSTIC_CATEGORIES = [
@@ -87,7 +92,7 @@ class DiagnosticPage(QWidget):
 
     @property
     def is_running(self) -> bool:
-        return (self.thread is not None and self.thread.isRunning()) or (self.repair_thread is not None and self.repair_thread.isRunning())
+        return (getattr(self, "plan_panel", None) is not None and self.plan_panel.is_running) or (self.thread is not None and self.thread.isRunning()) or (self.repair_thread is not None and self.repair_thread.isRunning())
 
     def show_start(self) -> None:
         self.pages.setCurrentIndex(0)
@@ -101,6 +106,9 @@ class DiagnosticPage(QWidget):
             self.history_label.setText(msg('尚无本机诊断历史。'))
 
     def request_cancel(self) -> None:
+        if self.plan_panel.is_running:
+            self.plan_panel.cancel()
+            return
         if self.repair_thread is not None and self.repair_thread.isRunning():
             self.scan_status.setText(msg('修复正在进行，当前操作不能安全中断；完成后会显示结果。'))
             return
@@ -140,6 +148,13 @@ class DiagnosticPage(QWidget):
         self.category.addItems(DIAGNOSTIC_CATEGORIES)
         self.category.setMinimumHeight(40)
         body.addWidget(self.category)
+        body.addWidget(QLabel(tr("network_target")))
+        self.network_target = QLineEdit("https://www.microsoft.com/")
+        body.addWidget(self.network_target)
+        self.network_scope = QComboBox()
+        for scope in ("all_sites", "one_site", "wifi"):
+            self.network_scope.addItem(tr(scope), scope)
+        body.addWidget(self.network_scope)
         body.addStretch()
         nav = QHBoxLayout()
         back = QPushButton(msg('返回首页'))
@@ -222,6 +237,9 @@ class DiagnosticPage(QWidget):
         repair_row.addWidget(self.rollback_button)
         repair_row.addStretch()
         body.addLayout(repair_row)
+        self.plan_panel = RepairPlanPanel(self)
+        self.plan_panel.busy_changed.connect(lambda busy: (self.repair_button.setEnabled(not busy), self.rollback_button.setEnabled(not busy and bool(self.rollback_ids))))
+        body.addWidget(self.plan_panel)
         nav = QHBoxLayout()
         again = QPushButton(msg('重新选择'))
         again.clicked.connect(self.show_start)
@@ -232,7 +250,10 @@ class DiagnosticPage(QWidget):
         nav.addStretch()
         nav.addWidget(package)
         body.addLayout(nav)
-        return page
+        area = QScrollArea()
+        area.setWidgetResizable(True)
+        area.setWidget(page)
+        return area
 
     def _start_scan(self) -> None:
         if self.is_running:
@@ -243,7 +264,20 @@ class DiagnosticPage(QWidget):
         self.scan_progress.setValue(0)
         self.scan_status.setText(msg('准备开始…'))
         self.thread = QThread(self)
-        self.worker = DiagnosticWorker(self.category.currentText())
+        from ..diagnostics.checks import default_checks
+        from ..diagnostics.engine import DiagnosticEngine
+        from ..diagnostics.scenario_checks import NetworkSceneCheck
+        checks = default_checks()
+        if self.category.currentText() in {"网络或Wi-Fi异常", "Microsoft Store 问题"}:
+            try:
+                checks.append(NetworkSceneCheck(self.network_target.text(), self.network_scope.currentData()))
+            except ValueError:
+                self.pages.setCurrentIndex(0)
+                QMessageBox.warning(self, tr("network_title"), tr("unsupported"))
+                self.thread.deleteLater()
+                self.thread = None
+                return
+        self.worker = DiagnosticWorker(self.category.currentText(), DiagnosticEngine(checks))
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.worker.progress.connect(self._scan_progress)
@@ -276,6 +310,7 @@ class DiagnosticPage(QWidget):
         except OSError:
             pass
         self._populate_results()
+        self.plan_panel.set_summary(summary)
         self.pages.setCurrentIndex(2)
         self.phase_changed.emit(msg('本机诊断 · 查看证据'))
 
@@ -323,6 +358,8 @@ class DiagnosticPage(QWidget):
             top.setData(0, Qt.ItemDataRole.UserRole, full_detail)
             top.setToolTip(0, full_detail)
             for repair in item.repair_suggestions:
+                if repair.action_id in {"install_wua_driver", "install_inf_driver", "scan_devices"}:
+                    continue
                 if repair.safety_level == SafetyLevel.L1 and not repair.requires_admin:
                     group = msg('可安全修复')
                 elif repair.safety_level == SafetyLevel.L3:

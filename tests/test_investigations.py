@@ -191,9 +191,9 @@ def test_storage_deduplicates_hardlinks(tmp_path):
 def test_software_four_scenarios_never_execute_target(tmp_path, scenario):
     exe = tmp_path / "quoted' program.exe"
     exe.write_bytes(b"synthetic data, not executable")
-    runner = Runner(values=[{"Version": "1.0"}, {"Signature": "NotSigned"}, [], [], [], []])
+    runner = Runner(values=[{"Version": "1.0"}, {"Signature": "NotSigned"}, [], [], [], [], []])
     result = analyze_software(str(exe), scenario, event(), progress, runner)
-    assert len(result.findings) == 6
+    assert len(result.findings) == 7
     assert "quoted'' program.exe" in runner.scripts[0]
     assert all("Start-Process" not in s for s in runner.scripts)
     assert 'does not prove' in result.markdown()

@@ -14,6 +14,12 @@ Choose a problem and **Run Check**. Findings include status, severity, confidenc
 
 ## Targeted checks
 
+## Repair plans
+
+After Diagnostics, open **Review Repair Plan**. Read evidence and impact, select actions and confirm. Actions that can interrupt a network, app or service require separate confirmation. **Stop Scheduling Further Actions** does not kill an active Windows transaction. Review the before/after evidence and related recheck, then decide whether the issue is resolved. Use **Restore Previous HelpPack Changes** for eligible backups; conflicting current settings are never overwritten. See the [action and recovery matrix](repair-plan-verification.md).
+
+## Targeted check details
+
 - **Symptoms**: local English/Chinese keyword routing, not an AI diagnosis.
 - **Network**: standard-port HTTPS URL without credentials/query/fragment; optional DNS of your choice. Compare adapter, gateway, DNS, proxy/direct HTTPS and target response. CDN differences are not proof of DNS interference.
 - **Software**: choose a running program or local EXE; it is not executed. Scenarios: Won't start, Crashes, Not responding, Installation fails. Dependencies/signatures do not prove health.

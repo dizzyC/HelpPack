@@ -58,6 +58,9 @@ def analyze_software(raw_path: str, scenario: str, cancel, progress, runner=None
             f"@(Get-WinEvent -FilterHashtable @{{LogName='Application';Id=@({ids});StartTime=(Get-Date).AddDays(-7)}} -MaxEvents 300 -ErrorAction SilentlyContinue |"
             f" Where-Object {{$_.Message -and $_.Message.IndexOf({name},[StringComparison]::OrdinalIgnoreCase) -ge 0}} |"
             " Select-Object -First 20 TimeCreated,Id,ProviderName,Message)|ConvertTo-Json -Depth 4 -Compress")
+    from ..plan_resources import tr
+    from .scenario_checks import crash_event_script
+    collect(60, tr("structured_crash"), crash_event_script(literal, name))
     collect(70, msg('常见运行库存在性（不是健康证明）'),
             "$roots=@('HKLM:\\SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x64','HKLM:\\SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x86',"
             "'HKLM:\\SOFTWARE\\Microsoft\\NET Framework Setup\\NDP\\v4\\Full');"

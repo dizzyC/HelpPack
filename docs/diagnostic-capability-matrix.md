@@ -1,5 +1,7 @@
 # Diagnostic Capabilities — English Edition
 
+Current repair plans and their recovery/confirmation/verification boundaries are recorded in the [repair-plan matrix](repair-plan-verification.md). Performance now uses six consecutive samples rather than treating a momentary peak as a cause; software checks additionally read named crash XML fields.
+
 All default checks are L0/read-only. Findings expose evidence, confidence and unavailable/unsupported/permission/timeout outcomes separately. A suggestion is not a confirmed diagnosis.
 
 | Area | Implemented behavior | Safety / limitations | Verification scope |

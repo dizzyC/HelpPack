@@ -28,6 +28,9 @@ def main() -> int:
     if len(sys.argv) == 3 and sys.argv[1] == "--self-check":
         from .validation import run_self_check
         return run_self_check(sys.argv[2])
+    if len(sys.argv) == 3 and sys.argv[1] == "--plan-self-check":
+        from .plan_acceptance import run
+        return run(sys.argv[2])
     app = QApplication(sys.argv)
     app.setApplicationName("HelpPack-English")
     app.setOrganizationName("HelpPack")

@@ -5,7 +5,6 @@ import platform
 import shutil
 import socket
 import ssl
-import time
 import urllib.error
 import urllib.request
 from datetime import UTC, datetime
@@ -17,6 +16,7 @@ import psutil
 from helppack.english import label as display_label
 from helppack.english import text as msg
 
+from ..plan_resources import tr
 from ..redaction import redact_text
 from .engine import ScanContext
 from .models import (
@@ -63,60 +63,12 @@ def _result(
 
 class PerformanceCheck:
     check_id = "performance.resources"
-    display_name = msg('资源占用与高占用进程（2 秒采样）')
+    display_name = tr("performance_title")
     categories = frozenset({"系统卡顿"})
 
     def run(self, context: ScanContext) -> list[DiagnosticResult]:
-        sample_seconds = 2.0
-        net_before = psutil.net_io_counters()
-        disk_before = psutil.disk_io_counters()
-        processes: list[psutil.Process] = []
-        for proc in psutil.process_iter(["pid", "name"]):
-            try:
-                proc.cpu_percent(None)
-                processes.append(proc)
-            except (psutil.Error, OSError):
-                continue
-        psutil.cpu_percent(None)
-        context.wait(sample_seconds)
-        cpu = psutil.cpu_percent(None)
-        memory = psutil.virtual_memory()
-        swap = psutil.swap_memory()
-        net_after = psutil.net_io_counters()
-        disk_after = psutil.disk_io_counters()
-        top: list[tuple[float, str, int, float]] = []
-        for proc in processes:
-            try:
-                name = proc.name()
-                if proc.pid == 0 or name.lower() == "system idle process":
-                    continue
-                top.append((proc.cpu_percent(None), name, proc.pid, proc.memory_info().rss / 1024**2))
-            except (psutil.Error, OSError):
-                continue
-        top.sort(reverse=True)
-        top_text = "；".join(msg('{0} (PID {1}) CPU {2:.1f}% / 内存 {3:.0f} MB', name, pid, value, rss) for value, name, pid, rss in top[:8]) or msg('没有可读取的进程样本')
-        sent = max(0, net_after.bytes_sent - net_before.bytes_sent)
-        received = max(0, net_after.bytes_recv - net_before.bytes_recv)
-        disk_read = max(0, (disk_after.read_bytes if disk_after else 0) - (disk_before.read_bytes if disk_before else 0))
-        disk_write = max(0, (disk_after.write_bytes if disk_after else 0) - (disk_before.write_bytes if disk_before else 0))
-        uptime_seconds = max(0, time.time() - psutil.boot_time())
-        status = DiagnosticStatus.NOTICE if cpu >= 90 or memory.percent >= 90 else DiagnosticStatus.NORMAL
-        severity = Severity.MEDIUM if status == DiagnosticStatus.NOTICE else Severity.INFO
-        evidence = [
-            Evidence(msg('采样时长'), msg('{0:.1f} 秒', sample_seconds)),
-            Evidence(msg('CPU 平均占用'), f"{cpu:.1f}%"),
-            Evidence(msg('内存占用'), msg('{0:.1f}%（可用 {1:.1f} GB）', memory.percent, memory.available / 1024 ** 3)),
-            Evidence(msg('分页使用'), f"{swap.percent:.1f}%"),
-            Evidence(msg('采样期网络流量'), msg('发送 {0:.1f} KB，接收 {1:.1f} KB', sent / 1024, received / 1024)),
-            Evidence(msg('采样期磁盘活动'), msg('读取 {0:.1f} KB，写入 {1:.1f} KB', disk_read / 1024, disk_write / 1024)),
-            Evidence(msg('系统运行时间'), msg('{0:.1f} 小时', uptime_seconds / 3600)),
-            Evidence(msg('高占用进程样本'), top_text),
-        ]
-        return [_result(
-            self.check_id, "系统卡顿", self.display_name, status, evidence,
-            msg('这是短时间采样，只能反映扫描期间的状态；单个进程短暂升高不等于它就是故障原因。'),
-            [msg('问题出现时可再次扫描，对比多次结果。')], severity=severity, confidence=msg('中（短时采样）')
-        )]
+        from .scenario_checks import continuous_performance
+        return continuous_performance(context)
 
 
 class DiskAndTempCheck:
@@ -522,10 +474,12 @@ def default_checks() -> list[Any]:
         SystemRepairCheck,
         VendorDriverSourceCheck,
     )
+    from .scenario_checks import CachePreviewCheck
     from .tls import InternetTlsCheck
 
     return [
         PerformanceCheck(),
+        CachePreviewCheck(),
         DiskAndTempCheck(),
         StartupCheck(),
         ScheduledTaskCheck(),
@@ -760,17 +714,6 @@ def _read_proxy() -> tuple[dict[str, Any], list[RepairSuggestion]]:
     server = str(values.get("ProxyServer", ""))
     pac = str(values.get("AutoConfigURL", ""))
     repairs: list[RepairSuggestion] = []
-    if enabled or pac:
-        repairs.append(RepairSuggestion(
-            action_id="reset_user_proxy",
-            display_name=msg('重置当前用户代理和 PAC'),
-            target={"key_path": path},
-            safety_level=SafetyLevel.L2,
-            requires_admin=False,
-            impact=msg('可能立即改变浏览器及部分应用的联网方式；单位网络或代理软件可能因此无法连接。'),
-            operation_preview=msg('备份并更新 HKCU Internet Settings 的 ProxyEnable、ProxyServer 和 AutoConfigURL'),
-            rollback=msg('从 HelpPack 备份恢复这三个值及其注册表类型。'),
-        ))
     return {"enabled": enabled, "display": f"{msg('启用') if enabled else msg('未启用')}；{redact_text(server) if server else msg('无服务器')}", "pac": redact_text(pac)}, repairs
 
 

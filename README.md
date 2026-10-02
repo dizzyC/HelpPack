@@ -1,5 +1,11 @@
 # HelpPack — English Edition
 
+## Local Diagnostics and Repair Plans Update
+
+Findings now include **Review Repair Plan**. Only evidence-supported candidates are offered; select actions and confirm, with separate approval for high-impact changes. Implemented candidates include safe service starts, DNS cache flushing, allowlisted cache quarantine, selected startup entries and conflict-safe recovery of app-made changes. Unsupported cases explain why and provide manual settings links, never a fixed set of unrelated commands.
+
+See the [usage, audit and recovery matrix](docs/repair-plan-verification.md) and [actual verification results](docs/repair-plan-results.md). Following acceptance, the user separately authorized source upload; see the [upload scope and checks](docs/github-upload.md). The local build is `dist\repair-plan\HelpPack-English.exe` and is not included in source upload. Run `python -m helppack --plan-self-check dist\plan-native` for read-only native acceptance, fictional report exports and plan preview cancelled without execution.
+
 A privacy-first Windows desktop tool for explaining computer problems, collecting relevant evidence and creating a **Support Bundle** for a friend, technician or AI.
 
 This is the `english` branch. The [Chinese edition is on `main`](https://github.com/dizzyC/HelpPack/tree/main). English development starts from the completed local Chinese feature baseline; published `main` may not yet include all of those local additions. No merge into `main` or new Release is part of this work.

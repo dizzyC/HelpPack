@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import platform
 import re
 from typing import ClassVar
-
-import psutil
 
 from helppack.english import label as display_label
 from helppack.english import text as msg
@@ -72,17 +69,6 @@ class NetworkRepairEligibilityCheck:
             is_complex = any(word in f"{alias} {description}".lower() for word in ("vpn", "virtual", "hyper-v", "bridge", "tap", "tunnel"))
             dhcp = str(row.get("Dhcp", "")).lower() == "enabled"
             evidence.append(f"{alias or msg('未命名接口')}：DHCP {msg('启用') if dhcp else msg('未启用')}；{msg('复杂/虚拟接口') if is_complex else msg('普通接口')}")
-            if dhcp and alias and str(row.get("Index", "")).isdigit():
-                repairs.append(RepairSuggestion(
-                    "renew_dhcp", msg('续租 DHCP：{0}', alias), {"interface_alias": alias}, SafetyLevel.L2, True,
-                    msg('该接口可能短暂断网。'), msg('只对接口“{0}”执行 DHCP 续租', alias), msg('续租本身不能可靠还原。'),
-                    RollbackCapability.BEST_EFFORT, side_effects=[msg('短暂断网')], evidence_ids=[self.check_id], estimated_seconds=90,
-                ))
-                repairs.append(RepairSuggestion(
-                    "reset_dns_to_dhcp", msg('恢复 DHCP DNS：{0}', alias), {"interface_index": str(row["Index"])}, SafetyLevel.L2, True,
-                    msg('会移除该接口手动配置的 DNS 服务器。'), msg('只重置接口“{0}”的 DNS 为 DHCP 默认值', alias), msg('使用 DPAPI 加密快照恢复原 DNS。'),
-                    RollbackCapability.FULL, side_effects=[msg('域名解析可能短暂中断')], evidence_ids=[self.check_id], estimated_seconds=45,
-                ))
         return [_result(self.check_id, "网络或Wi-Fi异常", self.display_name, DiagnosticStatus.NOTICE,
             [Evidence(msg('活动接口'), redact_text("；".join(evidence)) if evidence else msg('没有可读取的活动接口'))],
             msg('网络栈损坏尚无可靠证据，因此不提供全局 Winsock/TCP/IP 重置。'), [msg('按实际症状选择单个接口；正常的自定义 DNS 无需重置。')], repairs,
@@ -180,29 +166,8 @@ class SystemRepairCheck:
     SERVICE_LABELS: ClassVar[dict[str, str]] = {"wuauserv": "Windows Update", "BITS": "BITS", "cryptsvc": msg('加密服务'), "Spooler": msg('打印后台处理'), "Audiosrv": "Windows Audio", "AudioEndpointBuilder": msg('音频终结点'), "bthserv": msg('蓝牙支持')}
 
     def run(self, context: ScanContext) -> list[DiagnosticResult]:
-        if platform.system() != "Windows" or not hasattr(psutil, "win_service_get"):
-            raise NotImplementedError
-        repairs: list[RepairSuggestion] = []
-        rows: list[str] = []
-        for name, label in self.SERVICE_LABELS.items():
-            selection = {"声音问题": {"Audiosrv", "AudioEndpointBuilder"}, "蓝牙问题": {"bthserv"},
-                         "打印机问题": {"Spooler"}, "Windows更新问题": {"wuauserv", "BITS", "cryptsvc"}}
-            if context.category in selection and name not in selection[context.category]:
-                continue
-            try:
-                status = psutil.win_service_get(name).status()
-            except psutil.Error:
-                status = display_label("无法读取")
-            rows.append(f"{label}：{status}")
-            if status == "stopped":
-                repairs.append(RepairSuggestion("service_start", msg('启动服务：{0}', label), {"service_name": name}, SafetyLevel.L2, True, msg('只启动该服务，不修改启动类型。'), msg('启动服务 {0}', name), msg('可人工再次停止。'), RollbackCapability.BEST_EFFORT, RestartRequirement.SERVICE, evidence_ids=[self.check_id], estimated_seconds=60))
-            elif status == "running" and context.category in selection:
-                repairs.append(RepairSuggestion("service_restart", msg('重新启动服务：{0}', label), {"service_name": name}, SafetyLevel.L2, True,
-                    msg('会暂时中断该服务正在处理的任务，未保存的任务可能失败。'), msg('只重新启动 {0}，不改启动类型', name), msg('无法恢复被中断的任务。'),
-                    RollbackCapability.NONE, RestartRequirement.SERVICE, evidence_ids=[self.check_id], estimated_seconds=90))
-        return [_result(self.check_id, msg('系统'), self.display_name, DiagnosticStatus.NOTICE,
-            [Evidence(msg('相关服务'), "；".join(rows))], msg('按需启动的服务停止可能正常；启动服务前请确认与当前故障相关。'),
-            [msg('尚无组件损坏证据，因此不自动推荐 DISM/SFC 修复。')], repairs, severity=Severity.LOW, confidence="中")]
+        from .scenario_checks import SafeServiceCheck
+        return SafeServiceCheck().run(context)
 
 
 VENDOR_SUPPORT_URLS = {

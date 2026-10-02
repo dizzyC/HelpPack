@@ -24,7 +24,11 @@ def main() -> int:
             if not isinstance(node, ast.Constant) or not isinstance(node.value, str) or not re.search("[\u4e00-\u9fff]", node.value):
                 continue
             value = node.value
-            if path.name == "english.py" or id(node) in resource_args:
+            if path.name == "plan_resources.py":
+                kind = "Reviewed paired Chinese and English repair-plan resources"
+            elif path.name == "plan_acceptance.py":
+                kind = "Compatible categories and synthetic acceptance data"
+            elif path.name == "english.py" or id(node) in resource_args:
                 kind = "English resource key"
             elif path.name == "validation.py":
                 kind = "Synthetic Unicode test data"
